@@ -69,14 +69,20 @@ CRON_SECRET="wizz-cron-secure-token-992211"
    npm install
    ```
 
-2. **Run Prisma migrations / push**:
+2. **Create / update the database schema and Prisma client** (schema changes such as the scheduled-deal columns on `ProductVariant` need this):
    ```bash
+   npx prisma db push
    npx prisma generate
    ```
 
 3. **Seed initial catalog and default accounts**:
    ```bash
    npm run seed
+   ```
+
+4. **(Optional) Load the full demo catalog** (52 products across 6 categories, 4 demo stores, eye-checked photos from `scripts/catalog-photos.ts`). Local/staging only: it archives published products that are not in the demo registry.
+   ```bash
+   npx tsx scripts/seed-complete-diverse-catalog.ts
    ```
 
 ### Default Seeded Test Credentials:

@@ -167,7 +167,7 @@ export function WizzLogo({
           >
             WIZZ
           </span>
-          <span className="font-extrabold text-emerald-600 ml-0.5 text-xs sm:text-sm uppercase tracking-wider">
+          <span className={`font-extrabold ml-0.5 text-xs sm:text-sm uppercase tracking-wider ${theme === "light" ? "text-emerald-300" : "text-emerald-600"}`}>
             .PK
           </span>
         </span>
@@ -177,7 +177,7 @@ export function WizzLogo({
 
   if (href) {
     return (
-      <Link href={href} className="inline-flex items-center focus-visible:ring-2 focus-visible:ring-emerald-600 rounded-lg p-0.5">
+      <Link href={href} className="inline-flex items-center focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 rounded-lg p-0.5">
         {content}
       </Link>
     );

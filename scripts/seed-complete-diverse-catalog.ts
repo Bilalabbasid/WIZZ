@@ -1,5 +1,7 @@
 import { prisma } from "../src/lib/db";
 import { ProductStatus, ProductModerationStatus } from "@prisma/client";
+import { EXPANSION_CATEGORIES, EXPANSION_REGISTRY } from "./catalog-expansion";
+import { CATALOG_PHOTOS } from "./catalog-photos";
 
 export interface SeedProductDef {
   title: string;
@@ -15,7 +17,8 @@ export interface SeedProductDef {
     title: string;
     sku: string;
     priceMinor: number;
-    compareAtPriceMinor: number;
+    /** Regular "was" price; null when the product is not marked down. */
+    compareAtPriceMinor: number | null;
     stock: number;
     attributes: Record<string, string>;
   }>;
@@ -1401,12 +1404,31 @@ Declutter living rooms, wardrobes, and home offices with the **LuminaCraft Stora
   },
 ];
 
+/** Every product in the demo catalog, with photos from the verified photo list. */
+function buildCatalog(): SeedProductDef[] {
+  return [...COMPLETE_CATALOG_REGISTRY, ...EXPANSION_REGISTRY].map((def) => {
+    const photos = CATALOG_PHOTOS[def.title];
+    if (!photos) return def;
+    return {
+      ...def,
+      images: photos.map((p, i) => ({ url: p.url, altText: p.alt, isThumbnail: i === 0 })),
+    };
+  });
+}
+
 async function main() {
-  console.log("=== STEP 1: VALIDATING 64 IMAGES FOR ABSOLUTE UNIQUENESS ===");
+  const CATALOG = buildCatalog();
+  const missingPhotos = CATALOG.filter((p) => p.images.length === 0).map((p) => p.title);
+  if (missingPhotos.length > 0) {
+    console.error("Products without photos:", missingPhotos);
+    process.exit(1);
+  }
+
+  console.log(`=== STEP 1: VALIDATING ${CATALOG.reduce((n, p) => n + p.images.length, 0)} IMAGES FOR UNIQUENESS ===`);
   const seenUrls = new Set<string>();
   const duplicateUrls: string[] = [];
 
-  for (const product of COMPLETE_CATALOG_REGISTRY) {
+  for (const product of CATALOG) {
     for (const img of product.images) {
       if (seenUrls.has(img.url)) {
         duplicateUrls.push(img.url);
@@ -1419,7 +1441,7 @@ async function main() {
     console.error("Duplicate URLs detected in seed catalog:", duplicateUrls);
     process.exit(1);
   }
-  console.log(`✔ Verified ${seenUrls.size} unique image URLs across ${COMPLETE_CATALOG_REGISTRY.length} products (0 duplicates).`);
+  console.log(`✔ Verified ${seenUrls.size} unique image URLs across ${CATALOG.length} products (0 duplicates).`);
 
   console.log("\n=== STEP 2: LOOKING UP CATEGORIES & SELLERS ===");
   const categories = await prisma.category.findMany();
@@ -1445,17 +1467,49 @@ async function main() {
     console.log("Created Home & Lifestyle category:", homeCatId);
   }
 
-  // Ensure all sellers are ACTIVE
+  // Create categories added by the catalog expansion
+  for (const cat of EXPANSION_CATEGORIES) {
+    if (!categoryMap.has(cat.slug)) {
+      const created = await prisma.category.create({ data: { ...cat, isActive: true } });
+      categoryMap.set(cat.slug, created.id);
+      console.log(`Created ${cat.name} category`);
+    }
+  }
+
+  // Fictional demo marketplace stores (no login accounts), so listings show more than one seller
+  const DEMO_STORES = [
+    { slug: "alpha-craft", name: "Alpha Craft Traders", legalName: "Alpha Craft Traders (Demo)", city: "Lahore" },
+    { slug: "beta-performance", name: "Beta Performance Store", legalName: "Beta Performance Store (Demo)", city: "Karachi" },
+    { slug: "indus-gear", name: "Indus Gear Co", legalName: "Indus Gear Co (Demo)", city: "Sialkot" },
+  ];
+  for (const store of DEMO_STORES) {
+    if (!sellerMap.has(store.slug)) {
+      const created = await prisma.sellerOrg.create({
+        data: {
+          ...store,
+          contactEmail: `${store.slug}@demo.wizz.pk`,
+          operationalStatus: "ACTIVE",
+          commissionRatePercent: 10,
+        },
+      });
+      sellerMap.set(store.slug, created.id);
+      console.log(`Created demo store ${store.name}`);
+    }
+  }
+
+  // Only the demo stores this catalog uses are activated; pending applicants are left alone
+  const catalogSellerSlugs = Array.from(new Set(CATALOG.map((p) => p.sellerSlug)));
   await prisma.sellerOrg.updateMany({
+    where: { slug: { in: catalogSellerSlugs } },
     data: { operationalStatus: "ACTIVE" },
   });
 
   const flagshipOrgId = sellerMap.get("wizz-pk-direct") || sellers[0]?.id;
 
-  console.log("\n=== STEP 3: SEEDING & SYNCING ALL 32 PRODUCTS (INTERLEAVED ACROSS CATEGORIES) ===");
+  console.log(`\n=== STEP 3: SEEDING & SYNCING ALL ${CATALOG.length} PRODUCTS (INTERLEAVED ACROSS CATEGORIES) ===`);
   // Group by category to interleave
   const byCatMap = new Map<string, SeedProductDef[]>();
-  for (const def of COMPLETE_CATALOG_REGISTRY) {
+  for (const def of CATALOG) {
     const list = byCatMap.get(def.categorySlug) || [];
     list.push(def);
     byCatMap.set(def.categorySlug, list);
@@ -1463,7 +1517,8 @@ async function main() {
 
   const interleaved: SeedProductDef[] = [];
   const catKeys = Array.from(byCatMap.keys());
-  for (let round = 0; round < 8; round++) {
+  const rounds = Math.max(...Array.from(byCatMap.values()).map((l) => l.length));
+  for (let round = 0; round < rounds; round++) {
     for (const key of catKeys) {
       const items = byCatMap.get(key)!;
       if (items[round]) {
@@ -1581,6 +1636,11 @@ async function main() {
             compareAtPriceMinor: vDef.compareAtPriceMinor,
             attributesJson: JSON.stringify(vDef.attributes),
             isActive: true,
+            dealPriceMinor: null,
+            dealStartsAt: null,
+            dealEndsAt: null,
+            dealRegularPriceMinor: null,
+            dealRegularCompareAtMinor: null,
           },
         });
       } else {
@@ -1629,7 +1689,7 @@ async function main() {
 
   console.log("\n=== STEP 4: CLEANUP DUPLICATES OR UN-SEED TEST ARTIFACTS ===");
   // Archive any products that are not part of the canonical 32 registry
-  const canonicalSlugs = new Set(COMPLETE_CATALOG_REGISTRY.map((p) => p.slug));
+  const canonicalSlugs = new Set(CATALOG.map((p) => p.slug));
   const nonCanonical = await prisma.product.findMany({
     where: {
       slug: { notIn: Array.from(canonicalSlugs) },

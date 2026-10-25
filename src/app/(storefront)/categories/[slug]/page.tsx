@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { serializeJsonLd } from "@/lib/formatters";
 import { getCategoryBySlug, getCategoryFilterMetadata, getProducts } from "@/modules/catalog/services";
 import { ProductCard } from "@/components/product-card";
 import { SITE_CONFIG } from "@/lib/config";
@@ -192,11 +193,11 @@ export default async function CategoryPage({ params, searchParams }: CategoryPag
       {/* Schema.org CollectionPage & BreadcrumbList */}
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(collectionJsonLd) }}
       />
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbJsonLd) }}
       />
 
       {/* Breadcrumb */}
@@ -420,7 +421,7 @@ export default async function CategoryPage({ params, searchParams }: CategoryPag
               </Link>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-3 gap-3.5 sm:gap-4.5">
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-3">
               {products.map((p) => (
                 <ProductCard key={p.id} product={p} />
               ))}

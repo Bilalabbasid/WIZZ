@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { serializeJsonLd } from "@/lib/formatters";
 import { getProductBySlug } from "@/modules/catalog/services";
 import { ProductDetailView } from "@/components/product-detail-view";
 import { SITE_CONFIG } from "@/lib/config";
@@ -182,11 +183,11 @@ export default async function ProductDetailPage({ params }: ProductPageProps) {
       {/* Schema.org Product & BreadcrumbList JSON-LD */}
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(productJsonLd) }}
       />
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbJsonLd) }}
       />
 
       {/* Semantic Breadcrumb Navigation */}

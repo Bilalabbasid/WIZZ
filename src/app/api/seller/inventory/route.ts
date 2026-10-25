@@ -1,76 +1,57 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
-import { getSellerContextForUser } from "@/modules/sellers/services";
 import { getSellerInventory, adjustSellerInventory } from "@/modules/sellers/catalog-services";
+import { requireSellerContext, sellerErrorResponse } from "@/modules/sellers/api-guard";
 import { InventoryAdjustmentReason } from "@prisma/client";
 
 export async function GET(req: NextRequest) {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const context = await getSellerContextForUser(user.id);
-    if (!context?.sellerOrg) {
-      return NextResponse.json({ error: "No seller organization found for this user." }, { status: 404 });
-    }
+    const { sellerOrg } = await requireSellerContext();
 
     const { searchParams } = new URL(req.url);
-    const lowStockOnly = searchParams.get("lowStock") === "true";
-    const query = searchParams.get("query") || undefined;
-    const page = Number(searchParams.get("page")) || 1;
-    const limit = Number(searchParams.get("limit")) || 25;
-
-    const inventory = await getSellerInventory(context.sellerOrg.id, {
-      lowStockOnly,
-      query,
-      page,
-      limit,
+    const inventory = await getSellerInventory(sellerOrg.id, {
+      lowStockOnly: searchParams.get("lowStock") === "true",
+      query: searchParams.get("query") || undefined,
+      page: Number(searchParams.get("page")) || 1,
+      limit: Number(searchParams.get("limit")) || 25,
     });
 
     return NextResponse.json({ success: true, ...inventory });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Error fetching inventory";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return sellerErrorResponse(err, "Error fetching inventory");
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const { user, sellerOrg } = await requireSellerContext({ catalogWrite: true });
 
-    const context = await getSellerContextForUser(user.id);
-    if (!context?.sellerOrg) {
-      return NextResponse.json({ error: "No seller organization found for this user." }, { status: 404 });
-    }
+    const { variantId, deltaUnits, reasonCode, notes } = await req.json();
 
-    const body = await req.json();
-    const { variantId, deltaUnits, reasonCode, notes } = body;
-
-    if (!variantId || deltaUnits === undefined || !reasonCode) {
+    if (!variantId || typeof variantId !== "string" || deltaUnits === undefined || !reasonCode) {
       return NextResponse.json(
         { error: "variantId, deltaUnits, and reasonCode are required." },
         { status: 400 }
       );
     }
+    const delta = Number(deltaUnits);
+    if (!Number.isInteger(delta) || delta === 0 || Math.abs(delta) > 1_000_000) {
+      return NextResponse.json({ error: "Adjustment must be a non-zero whole number of units." }, { status: 400 });
+    }
+    if (!(Object.values(InventoryAdjustmentReason) as string[]).includes(reasonCode)) {
+      return NextResponse.json({ error: "Choose a valid adjustment reason." }, { status: 400 });
+    }
 
     const result = await adjustSellerInventory(
-      context.sellerOrg.id,
+      sellerOrg.id,
       variantId,
-      Number(deltaUnits),
+      delta,
       reasonCode as InventoryAdjustmentReason,
-      notes,
+      typeof notes === "string" ? notes.slice(0, 500) : undefined,
       user.id
     );
 
     return NextResponse.json({ success: true, ...result });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Error adjusting inventory";
-    const status = message.includes("FORBIDDEN") ? 403 : 400;
-    return NextResponse.json({ error: message }, { status });
+    return sellerErrorResponse(err, "Error adjusting inventory");
   }
 }

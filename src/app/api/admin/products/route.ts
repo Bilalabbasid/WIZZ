@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth";
-import { UserRole, ProductStatus, InventoryAdjustmentReason } from "@prisma/client";
+import { UserRole } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { SITE_CONFIG } from "@/lib/config";
+import { createSellerProduct } from "@/modules/sellers/catalog-services";
 
+/**
+ * Quick-create a first-party (WIZZ.PK Direct) listing from the admin console.
+ * Delegates to the seller catalog service so the same validation applies.
+ */
 export async function POST(req: NextRequest) {
   try {
     const admin = await requireRole([
@@ -33,80 +38,33 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const slug = `${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}-${Date.now().toString().slice(-4)}`;
-
-    const product = await prisma.$transaction(async (tx) => {
-      const p = await tx.product.create({
-        data: {
-          sellerOrgId: SITE_CONFIG.flagshipSellerId,
-          title,
-          slug,
-          description,
-          categoryId,
-          brandId: brandId || null,
-          featured: Boolean(featured),
-          weightGrams: Number(weightGrams),
-          status: ProductStatus.PUBLISHED,
-          isApprovedByPlatform: true,
-        },
-      });
-
-      if (imageUrl) {
-        await tx.productMedia.create({
-          data: {
-            productId: p.id,
-            url: imageUrl,
-            altText: title,
-            isThumbnail: true,
-            displayOrder: 0,
+    const product = await createSellerProduct(
+      SITE_CONFIG.flagshipSellerId,
+      {
+        title,
+        description,
+        categoryId,
+        brandId: brandId || null,
+        weightGrams: Number(weightGrams),
+        submitForReview: Boolean(imageUrl),
+        images: imageUrl ? [{ url: String(imageUrl), altText: title, isThumbnail: true }] : [],
+        variants: [
+          {
+            title: variantTitle,
+            sku: String(initialSku),
+            priceMinor: Number(priceMinor),
+            compareAtPriceMinor: compareAtPriceMinor ? Number(compareAtPriceMinor) : null,
+            initialStock: Number(initialStock),
+            attributes: { edition: variantTitle },
           },
-        });
-      }
+        ],
+      },
+      admin.id
+    );
 
-      const variant = await tx.productVariant.create({
-        data: {
-          productId: p.id,
-          sku: initialSku,
-          title: variantTitle,
-          priceMinor: Number(priceMinor),
-          compareAtPriceMinor: compareAtPriceMinor ? Number(compareAtPriceMinor) : null,
-          attributesJson: JSON.stringify({ edition: variantTitle }),
-        },
-      });
-
-      await tx.inventoryLevel.create({
-        data: {
-          variantId: variant.id,
-          sellerOrgId: SITE_CONFIG.flagshipSellerId,
-          availableUnits: Number(initialStock),
-          reservedUnits: 0,
-        },
-      });
-
-      await tx.inventoryAdjustment.create({
-        data: {
-          variantId: variant.id,
-          sellerOrgId: SITE_CONFIG.flagshipSellerId,
-          actorUserId: admin.id,
-          deltaUnits: Number(initialStock),
-          balanceAfter: Number(initialStock),
-          reasonCode: InventoryAdjustmentReason.RECEIVING,
-          notes: "Initial inventory receiving on product creation.",
-        },
-      });
-
-      await tx.auditEvent.create({
-        data: {
-          actorUserId: admin.id,
-          entityType: "Product",
-          entityId: p.id,
-          action: "CREATE_1P_PRODUCT",
-          detailsJson: JSON.stringify({ title, sku: initialSku, stock: initialStock }),
-        },
-      });
-
-      return p;
-    });
+    if (featured) {
+      await prisma.product.update({ where: { id: product.id }, data: { featured: true } });
+    }
 
     return NextResponse.json({ success: true, product });
   } catch (err: unknown) {

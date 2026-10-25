@@ -97,12 +97,14 @@ WIZZ.PK is engineered as a production-grade retail platform operating as a modul
 | **M1: Discovery & Skills Alignment** | Repository audit, skills installation (`ui-ux-pro-max`), SKILL.md analysis | Completed | 5 skills loaded, CLI tools functional |
 | **M2: Design Direction & Tokens** | 3 Visual directions formulated, Direction 1 selected, `DESIGN_SYSTEM.md` authored | Completed | Design tokens in `globals.css` |
 | **M3: Pakistan-First Commerce Core** | PKR currency config, Pakistan address schemas, COD flow with reconciliation states | In Progress | Test suite passing, checkout updated |
-| **M4: Storefront Visual Realization** | Merchandised homepage, rich product details, high-density catalog, mobile nav | In Progress | Built with Plus Jakarta Sans & Tailwind |
+| **M4: Storefront Visual Realization** | Merchandised homepage, rich product details, high-density catalog, mobile nav. 2026-10-25 polish pass: green brand header, category rail + deals carousel hero, scroll rails, image category tiles, denser product card, 4-column listings | In Progress | `tsc`, `npm test` (333 checks passing), browser check at 375px and 977px. Product detail, cart and checkout not yet restyled |
+| **M4b: Seller Center Catalog (2026-10-25)** | Product upload with validated server input, image upload (byte-checked, catalog roles only), formatted descriptions, live price/stock edits with ledger, scheduled deals, review staging for approved listings, list tabs + quick edit + pagination, admin revision summary | Done | `tests/seller-catalog-regression.test.ts` (43 checks) plus existing suites; browser check of list, quick edit, editor deal, upload and storefront price |
 | **M5: Administration & Logistics** | Admin catalog, inventory log, courier dispatch, COD remittance tool | In Progress | Route Handlers & Server Components verified |
 | **M6: Verification & Hardening** | 11 Domain test suites, build check, Turbopack bundle trace optimization | Pending | `npm test` & `npm run build` |
 
 ---
 
 ## 4. Known Blockers & External Requirements
+0. **Seed catalog imagery**: Several seeded products show photos that do not match the product (e.g. a handbag on a knife listing, a keyboard on a wrist rest), and one product image URL (LuminaCraft storage basket) returns 404. Storefront now shows a placeholder for failed images, but real product photography is needed before launch.
 1. **Live Payment Gateway Credentials**: Online payment processing currently utilizes the sandboxed local development adapter. Live payment with Pakistani providers (Safepay, PayFast, Kuickpay) requires merchant account registration, API keys, and webhook endpoints configured in `.env`.
 2. **Object Storage**: Local file storage is utilized in development (`.uploads/`). Production deployment requires S3-compatible credentials (AWS S3, Cloudflare R2, or MinIO).

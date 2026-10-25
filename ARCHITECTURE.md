@@ -54,6 +54,15 @@ A single customer checkout session with items from multiple sellers creates:
 
 ---
 
+### 2.3 Seller Catalog: Publishing, Price Edits & Scheduled Deals
+Implemented in `src/modules/sellers/catalog-services.ts` and `deal-pricing.ts`; all seller routes resolve the store from the caller's membership (`api-guard.ts`), and catalog writes require the OWNER, ADMIN or CATALOG_MANAGER role.
+
+- **Publishing**: External sellers cannot publish directly. "Submit for review" sets `moderationStatus = PENDING_REVIEW`; an admin approval sets `PUBLISHED` + `isApprovedByPlatform`. WIZZ.PK Direct (first party) publishes immediately. A listing needs a description and at least one image to be submitted.
+- **Live vs reviewed changes**: Price, "was" price, deal, cost, stock, low-stock alert, variant on/off and removing variants apply immediately. Content (title, description, images, category, brand, specs, SEO, variant names/SKUs, new variants) of an approved external listing is staged in `pendingChangesJson` and applied only on approval; shoppers keep seeing the approved version.
+- **Stock edits** are applied as a delta from the value the seller loaded (`stockBaseline`), recorded in `InventoryAdjustment`, and can never go below `reservedUnits`.
+- **Removed variants** are deactivated, never deleted, so order history keeps its references; re-adding the SKU revives the same variant.
+- **Scheduled deals**: `priceMinor` is always what the shopper pays now. While a deal is live, `priceMinor = dealPriceMinor`, `compareAtPriceMinor` = the regular price, and the seller's own values sit in `dealRegularPriceMinor` / `dealRegularCompareAtMinor`. `syncDealPricing()` applies start/end transitions on every maintenance tick and for the cart's variants at the start of checkout, so the charged price always matches the deal window. Price edits during a deal change the regular price.
+
 ## 3. Inventory Concurrency & Zero Overselling Protection
 
 1. **15-Minute Reservation Window**: Adding items to checkout or beginning order placement creates an `InventoryReservation` record with `expiresAt = now() + 15 minutes`.

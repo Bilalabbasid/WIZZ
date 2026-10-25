@@ -2,6 +2,8 @@
 
 import React, { useState } from "react";
 import { formatCurrency, formatDate, formatEstimatedDelivery } from "@/lib/formatters";
+import { SITE_CONFIG } from "@/lib/config";
+import { ProductDescription } from "./product-description";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { RatingStars } from "@/components/ui/rating";
@@ -359,9 +361,7 @@ export function ProductDetailView({ product }: ProductDetailProps) {
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
               Product Overview
             </h3>
-            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed whitespace-pre-line">
-              {product.description}
-            </p>
+            <ProductDescription text={product.description} />
           </div>
 
           {/* Technical Specifications */}
@@ -397,7 +397,7 @@ export function ProductDetailView({ product }: ProductDetailProps) {
                 {formatCurrency(selectedVariant.priceMinor)}
               </span>
               <span className="text-xs text-emerald-700 font-semibold block mt-0.5">
-                Free Delivery over PKR 5,000
+                Free Delivery over {formatCurrency(SITE_CONFIG.shipping.freeShippingThresholdMinor)}
               </span>
             </div>
 

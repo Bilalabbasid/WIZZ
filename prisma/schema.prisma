@@ -318,6 +318,14 @@ model ProductVariant {
   attributesJson      String             @default("{}") // JSON string of variant attrs e.g. {"size":"M","color":"Navy"}
   barcode             String?
   isActive            Boolean            @default(true)
+  // Scheduled special price ("deal"). While a deal is live, priceMinor holds the deal
+  // price and the seller's regular price/compare-at are kept in dealRegular* so they
+  // can be restored when the deal ends. See src/modules/sellers/deal-pricing.ts.
+  dealPriceMinor            Int?
+  dealStartsAt              DateTime?
+  dealEndsAt                DateTime?
+  dealRegularPriceMinor     Int?
+  dealRegularCompareAtMinor Int?
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
 
@@ -329,6 +337,8 @@ model ProductVariant {
   orderItems          OrderItem[]
 
   @@unique([productId, sku])
+  @@index([dealStartsAt])
+  @@index([dealEndsAt])
 }
 
 model ProductMedia {

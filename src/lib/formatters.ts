@@ -29,6 +29,21 @@ export function formatCurrency(
 }
 
 /**
+ * Formats minor units as a bare number without the currency prefix,
+ * for layouts that typeset "Rs." separately from the amount.
+ */
+export function formatAmount(
+  amountMinor: number | bigint,
+  locale: string = SITE_CONFIG.defaultLocale
+): string {
+  const numericAmount = typeof amountMinor === "bigint" ? Number(amountMinor) : amountMinor;
+  return new Intl.NumberFormat(locale, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(numericAmount / 100);
+}
+
+/**
  * Convenient alias to format minor units in Pakistani Rupees (PKR)
  */
 export function formatPkr(amountMinor: number | bigint): string {
@@ -84,3 +99,22 @@ export function formatEstimatedDelivery(businessDaysOffset: number = 2): string 
   }).format(d);
 }
 
+const JSON_LD_ESCAPES: Array<[string, string]> = [
+  ["<", "u003c"],
+  [String.fromCharCode(0x2028), "u2028"],
+  [String.fromCharCode(0x2029), "u2029"],
+];
+const BACKSLASH = String.fromCharCode(92);
+
+/**
+ * Serializes structured data for a <script type="application/ld+json"> tag.
+ * Escapes "<" and the U+2028/U+2029 line separators as JSON unicode escapes so
+ * seller-written text such as "</script>" cannot close the tag and inject markup.
+ */
+export function serializeJsonLd(data: unknown): string {
+  let json = JSON.stringify(data);
+  for (const [char, code] of JSON_LD_ESCAPES) {
+    json = json.split(char).join(BACKSLASH + code);
+  }
+  return json;
+}

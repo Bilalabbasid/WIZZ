@@ -38,8 +38,8 @@ yarn-error.log*
 !.env.example
 
 # local uploads
-.uploads/
-uploads/
+/.uploads/
+/uploads/
 
 # vercel
 .vercel

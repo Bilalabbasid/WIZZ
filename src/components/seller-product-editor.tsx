@@ -33,6 +33,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { formatPkr } from "@/lib/formatters";
+import { ProductDescription } from "@/components/product-description";
 
 interface ProductImageItem {
   id?: string;
@@ -52,9 +53,16 @@ interface ProductVariantItem {
   costPricePkr?: number | "";
   barcode?: string;
   stock: number;
+  /** On-hand stock when loaded; the server applies edits as a delta from it. */
+  stockBaseline?: number;
+  reservedUnits?: number;
   lowStockThreshold: number;
   attributes: Record<string, string>;
   isActive: boolean;
+  dealPricePkr: number | "";
+  /** datetime-local values (seller's local time) */
+  dealStartsAt: string;
+  dealEndsAt: string;
 }
 
 interface AttributeItem {
@@ -69,9 +77,73 @@ interface OptionDefinition {
 
 interface SellerProductEditorProps {
   initialProductId?: string; // If editing existing product
+  /** Set after creating a listing, to confirm what happened */
+  createdNotice?: "draft" | "submitted";
 }
 
-export function SellerProductEditor({ initialProductId }: SellerProductEditorProps) {
+/** Date -> value for <input type="datetime-local"> in the browser's timezone. */
+function toLocalInput(value: string | Date | null | undefined): string {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function localInputToIso(value: string): string | null {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+function dealState(v: Pick<ProductVariantItem, "dealPricePkr" | "dealStartsAt" | "dealEndsAt">, now: number) {
+  if (v.dealPricePkr === "" || !v.dealStartsAt || !v.dealEndsAt) return "none" as const;
+  const start = new Date(v.dealStartsAt).getTime();
+  const end = new Date(v.dealEndsAt).getTime();
+  if (end <= now) return "ended" as const;
+  return start <= now ? ("live" as const) : ("scheduled" as const);
+}
+
+const comboKey = (attrs: Record<string, string>) =>
+  Object.entries(attrs)
+    .map(([k, v]) => `${k.trim().toLowerCase()}=${String(v).trim().toLowerCase()}`)
+    .sort()
+    .join("|");
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function variantFromServer(v: any): ProductVariantItem {
+  let parsedAttrs: Record<string, string> = {};
+  try {
+    parsedAttrs = JSON.parse(v.attributesJson || "{}");
+  } catch {}
+  // While a deal is live the server stores the regular price in dealRegular*
+  const regularPrice = v.dealRegularPriceMinor ?? v.priceMinor;
+  const regularCompareAt = v.dealRegularPriceMinor != null ? v.dealRegularCompareAtMinor : v.compareAtPriceMinor;
+  return {
+    id: v.id,
+    title: v.title,
+    sku: v.sku,
+    pricePkr: regularPrice / 100,
+    compareAtPricePkr: regularCompareAt ? regularCompareAt / 100 : "",
+    costPricePkr: v.costPriceMinor ? v.costPriceMinor / 100 : "",
+    barcode: v.barcode || "",
+    stock: v.inventoryLevel?.availableUnits ?? 0,
+    stockBaseline: v.inventoryLevel?.availableUnits ?? 0,
+    reservedUnits: v.inventoryLevel?.reservedUnits ?? 0,
+    lowStockThreshold: v.inventoryLevel?.lowStockThreshold ?? 5,
+    attributes: parsedAttrs,
+    isActive: v.isActive,
+    dealPricePkr: v.dealPriceMinor ? v.dealPriceMinor / 100 : "",
+    dealStartsAt: toLocalInput(v.dealStartsAt),
+    dealEndsAt: toLocalInput(v.dealEndsAt),
+  };
+}
+
+const MAX_IMAGES = 12;
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+
+export function SellerProductEditor({ initialProductId, createdNotice }: SellerProductEditorProps) {
   const router = useRouter();
 
   // Reference data
@@ -89,6 +161,10 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
   const [moderationStatus, setModerationStatus] = useState<string>("DRAFT");
   const [moderationNotes, setModerationNotes] = useState<string | null>(null);
   const [hasPendingChanges, setHasPendingChanges] = useState<boolean>(false);
+  const [isApprovedListing, setIsApprovedListing] = useState<boolean>(false);
+  const [isFirstPartyStore, setIsFirstPartyStore] = useState<boolean>(false);
+  const [showDescriptionPreview, setShowDescriptionPreview] = useState(false);
+  const [isDraggingFiles, setIsDraggingFiles] = useState(false);
   const [weightGrams, setWeightGrams] = useState(500);
 
   // SEO fields
@@ -120,6 +196,9 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
       lowStockThreshold: 5,
       attributes: { Size: "Standard" },
       isActive: true,
+      dealPricePkr: "",
+      dealStartsAt: "",
+      dealEndsAt: "",
     },
   ]);
 
@@ -127,13 +206,24 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
   const [bulkPrice, setBulkPrice] = useState<string>("");
   const [bulkStock, setBulkStock] = useState<string>("");
   const [bulkCompareAt, setBulkCompareAt] = useState<string>("");
+  const [bulkDealPercent, setBulkDealPercent] = useState<string>("");
+  const [bulkDealStart, setBulkDealStart] = useState<string>("");
+  const [bulkDealEnd, setBulkDealEnd] = useState<string>("");
 
   // UI state
   const [activeTab, setActiveTab] = useState<"general" | "images" | "variants" | "attributes" | "seo">("general");
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(Boolean(initialProductId));
   const [isSaving, setIsSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [saveMessage, setSaveMessage] = useState<string | null>(
+    createdNotice === "submitted"
+      ? "Listing created and sent for review."
+      : createdNotice === "draft"
+      ? "Draft created. Add photos and details, then submit it."
+      : null
+  );
+  // Reference time for deal badges, captured once per editor session
+  const [nowTs] = useState(() => Date.now());
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Load categories and existing product data
@@ -153,10 +243,19 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
           }
         }
         if (catData.brands) setBrands(catData.brands);
-        if (ctxData.context) setCanSell(ctxData.context.canSell);
+        if (ctxData.context) {
+          setCanSell(ctxData.context.canSell);
+          const org = ctxData.context.sellerOrg;
+          // Display hint only; the server decides whether review is needed
+          setIsFirstPartyStore(Boolean(org && (org.slug === "wizz-pk-direct" || org.id === "seller_wizz_pk_1p")));
+        }
 
+        if (prodData && prodData.error) {
+          setErrorMessage(prodData.error);
+        }
         if (prodData && prodData.product) {
           const p = prodData.product;
+          setIsApprovedListing(Boolean(p.isApprovedByPlatform));
           setTitle(p.title);
           setSlug(p.slug || "");
           setDescription(p.description);
@@ -195,29 +294,11 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
             );
           }
 
-          // Populate variants
+          // Populate variants (inactive ones were removed earlier and are not editable)
           if (p.variants && p.variants.length > 0) {
-            setVariants(
-              p.variants.map((v: any) => {
-                let parsedAttrs: Record<string, string> = {};
-                try {
-                  parsedAttrs = JSON.parse(v.attributesJson || "{}");
-                } catch {}
-                return {
-                  id: v.id,
-                  title: v.title,
-                  sku: v.sku,
-                  pricePkr: v.priceMinor / 100,
-                  compareAtPricePkr: v.compareAtPriceMinor ? v.compareAtPriceMinor / 100 : "",
-                  costPricePkr: v.costPriceMinor ? v.costPriceMinor / 100 : "",
-                  barcode: v.barcode || "",
-                  stock: v.inventoryLevel?.availableUnits ?? 0,
-                  lowStockThreshold: v.inventoryLevel?.lowStockThreshold ?? 5,
-                  attributes: parsedAttrs,
-                  isActive: v.isActive,
-                };
-              })
-            );
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const active = p.variants.filter((v: any) => v.isActive);
+            setVariants((active.length ? active : p.variants).map(variantFromServer));
           }
         }
       })
@@ -241,9 +322,18 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
   // Image Upload & Management Handlers
   // ----------------------------------------------------
   const handleAddImageUrl = () => {
-    if (!newImageUrl.trim()) return;
+    const url = newImageUrl.trim();
+    if (!url) return;
+    if (!/^https:\/\/[^\s"'<>]+$/i.test(url)) {
+      setErrorMessage("Image links must start with https://");
+      return;
+    }
+    if (images.length >= MAX_IMAGES) {
+      setErrorMessage(`A product can have at most ${MAX_IMAGES} images.`);
+      return;
+    }
     const newImg: ProductImageItem = {
-      url: newImageUrl.trim(),
+      url,
       altText: title || "Product image",
       isThumbnail: images.length === 0,
       displayOrder: images.length,
@@ -252,42 +342,70 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
     setNewImageUrl("");
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+  const uploadFiles = async (fileList: FileList | File[]) => {
+    const files = Array.from(fileList);
+    if (files.length === 0) return;
+
+    const room = MAX_IMAGES - images.length;
+    if (room <= 0) {
+      setErrorMessage(`A product can have at most ${MAX_IMAGES} images. Remove one to add another.`);
+      return;
+    }
+
+    const problems: string[] = [];
+    const accepted = files.filter((file) => {
+      if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+        problems.push(`${file.name}: use a JPEG, PNG, WEBP or GIF image.`);
+        return false;
+      }
+      if (file.size > MAX_IMAGE_BYTES) {
+        problems.push(`${file.name}: larger than 10 MB.`);
+        return false;
+      }
+      return true;
+    });
+    if (accepted.length > room) {
+      problems.push(`Only ${room} more image(s) fit; the rest were skipped.`);
+      accepted.length = room;
+    }
 
     setIsUploadingImage(true);
     setErrorMessage(null);
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
+    for (const file of accepted) {
       const formData = new FormData();
       formData.append("file", file);
+      formData.append("purpose", "product_image");
 
       try {
-        const res = await fetch("/api/uploads", {
-          method: "POST",
-          body: formData,
-        });
+        const res = await fetch("/api/uploads", { method: "POST", body: formData });
         const data = await res.json();
         if (res.ok && data.url) {
           setImages((prev) => [
             ...prev,
             {
               url: data.url,
-              altText: file.name.replace(/\.[^/.]+$/, ""),
+              altText: title || file.name.replace(/\.[^/.]+$/, ""),
               isThumbnail: prev.length === 0,
               displayOrder: prev.length,
             },
           ]);
         } else {
-          setErrorMessage(data.error || "Failed uploading image");
+          problems.push(`${file.name}: ${data.error || "upload failed."}`);
         }
       } catch {
-        setErrorMessage("Upload failed. You may also specify direct image URLs.");
+        problems.push(`${file.name}: upload failed. Check your connection and try again.`);
       }
     }
+
     setIsUploadingImage(false);
+    if (problems.length) setErrorMessage(problems.join(" "));
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.target;
+    if (input.files) await uploadFiles(input.files);
+    input.value = ""; // allow re-selecting the same file
   };
 
   const handleSetPrimaryImage = (index: number) => {
@@ -368,28 +486,47 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
       combinations = nextCombos;
     }
 
-    // Convert combinations into Variant items
+    // Keep existing variants whose options match a combination (their id, price,
+    // stock and deal are preserved); only genuinely new combinations are added.
+    const existingByCombo = new Map(variants.map((v) => [comboKey(v.attributes), v]));
     const basePrice = variants[0]?.pricePkr || 2499;
-    const baseSkuPrefix = title ? title.slice(0, 3).toUpperCase().replace(/[^A-Z]/g, "SKU") : "WIZ";
+    const baseSkuPrefix = (title.replace(/[^A-Za-z0-9]/g, "").slice(0, 4) || "WIZ").toUpperCase();
+    const usedSkus = new Set(variants.map((v) => v.sku.toUpperCase()));
 
     const newVariants: ProductVariantItem[] = combinations.map((combo, idx) => {
-      const comboTitle = Object.values(combo).join(" / ");
+      const match = existingByCombo.get(comboKey(combo));
+      if (match) return { ...match, attributes: combo, title: Object.values(combo).join(" / ") };
+
       const comboSkuSuffix = Object.values(combo)
-        .map((v) => v.slice(0, 3).toUpperCase())
+        .map((v) => v.replace(/[^A-Za-z0-9]/g, "").slice(0, 3).toUpperCase() || "X")
         .join("-");
+      let sku = `${baseSkuPrefix}-${comboSkuSuffix}`;
+      for (let n = idx + 1; usedSkus.has(sku.toUpperCase()); n++) sku = `${baseSkuPrefix}-${comboSkuSuffix}-${n}`;
+      usedSkus.add(sku.toUpperCase());
+
       return {
-        title: comboTitle,
-        sku: `${baseSkuPrefix}-${comboSkuSuffix}-${idx + 101}`,
+        title: Object.values(combo).join(" / "),
+        sku,
         pricePkr: basePrice,
         compareAtPricePkr: "",
-        stock: 25,
+        stock: 0,
         lowStockThreshold: 5,
         attributes: combo,
         isActive: true,
+        dealPricePkr: "",
+        dealStartsAt: "",
+        dealEndsAt: "",
       };
     });
 
+    const dropped = variants.filter((v) => v.id && !newVariants.some((nv) => nv.id === v.id)).length;
     setVariants(newVariants);
+    setSaveMessage(null);
+    setErrorMessage(
+      dropped > 0
+        ? `${dropped} saved variant(s) no longer match your options. They will stop selling when you save; order history is kept.`
+        : null
+    );
   };
 
   const handleAddSingleVariant = () => {
@@ -401,10 +538,13 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
         sku: `SKU-${Date.now().toString().slice(-4)}-${nextIdx}`,
         pricePkr: 2499,
         compareAtPricePkr: "",
-        stock: 10,
+        stock: 0,
         lowStockThreshold: 5,
         attributes: {},
         isActive: true,
+        dealPricePkr: "",
+        dealStartsAt: "",
+        dealEndsAt: "",
       },
     ]);
   };
@@ -458,6 +598,37 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
     setBulkStock("");
   };
 
+  /** Applies a "% off" deal with one schedule to every variant. */
+  const handleApplyBulkDeal = () => {
+    const pct = Number(bulkDealPercent);
+    if (!Number.isFinite(pct) || pct <= 0 || pct >= 100) {
+      setErrorMessage("Enter a deal discount between 1 and 99 percent.");
+      return;
+    }
+    if (!bulkDealStart || !bulkDealEnd) {
+      setErrorMessage("Choose when the deal starts and ends.");
+      return;
+    }
+    if (new Date(bulkDealEnd) <= new Date(bulkDealStart)) {
+      setErrorMessage("The deal must end after it starts.");
+      return;
+    }
+    setErrorMessage(null);
+    setVariants(
+      variants.map((v) => ({
+        ...v,
+        dealPricePkr: Math.max(1, Math.round(v.pricePkr * (1 - pct / 100))),
+        dealStartsAt: bulkDealStart,
+        dealEndsAt: bulkDealEnd,
+      }))
+    );
+    setBulkDealPercent("");
+  };
+
+  const handleClearDeals = () => {
+    setVariants(variants.map((v) => ({ ...v, dealPricePkr: "", dealStartsAt: "", dealEndsAt: "" })));
+  };
+
   // ----------------------------------------------------
   // Attributes Handlers
   // ----------------------------------------------------
@@ -500,11 +671,28 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
       }
       seenSkus.add(norm);
 
-      if (v.pricePkr < 0) return `Variant "${v.sku}" price cannot be negative.`;
+      if (!v.title.trim()) return `Variant #${i + 1} needs a name.`;
+      if (!(v.pricePkr > 0)) return `Variant "${v.sku}": price must be greater than zero.`;
       if (v.stock < 0) return `Variant "${v.sku}" stock cannot be negative.`;
+      if ((v.reservedUnits ?? 0) > 0 && v.stock < (v.reservedUnits ?? 0)) {
+        return `Variant "${v.sku}": stock cannot go below the ${v.reservedUnits} unit(s) held for open checkouts.`;
+      }
 
       if (v.compareAtPricePkr !== "" && Number(v.compareAtPricePkr) <= Number(v.pricePkr)) {
-        return `Variant "${v.sku}": Compare-at promotional price (Rs. ${v.compareAtPricePkr}) must be strictly greater than selling price (Rs. ${v.pricePkr}).`;
+        return `Variant "${v.sku}": "Was" price (Rs. ${v.compareAtPricePkr}) must be higher than the selling price (Rs. ${v.pricePkr}).`;
+      }
+
+      const hasAnyDeal = v.dealPricePkr !== "" || v.dealStartsAt || v.dealEndsAt;
+      if (hasAnyDeal) {
+        if (v.dealPricePkr === "" || !v.dealStartsAt || !v.dealEndsAt) {
+          return `Variant "${v.sku}": a deal needs a deal price, a start and an end.`;
+        }
+        if (!(Number(v.dealPricePkr) > 0) || Number(v.dealPricePkr) >= v.pricePkr) {
+          return `Variant "${v.sku}": deal price must be lower than the regular price (Rs. ${v.pricePkr}).`;
+        }
+        if (new Date(v.dealEndsAt) <= new Date(v.dealStartsAt)) {
+          return `Variant "${v.sku}": the deal must end after it starts.`;
+        }
       }
     }
 
@@ -515,11 +703,17 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
     return null;
   };
 
-  const handleSave = async (submitForReview = false) => {
+  /**
+   * save:    store changes (prices, stock and deals go live; content of an approved
+   *          listing is sent for review)
+   * submit:  save and publish (first-party) or send for platform review
+   * offline / online: take an approved listing off the store, or put it back
+   */
+  const handleSave = async (mode: "save" | "submit" | "offline" | "online" = "save") => {
     setErrorMessage(null);
     setSaveMessage(null);
 
-    const validationErr = validateBeforeSubmit(!submitForReview);
+    const validationErr = validateBeforeSubmit(mode !== "submit");
     if (validationErr) {
       setErrorMessage(validationErr);
       return;
@@ -528,7 +722,6 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
     setIsSaving(true);
 
     try {
-      // Build attribute dictionary
       const attrRecord: Record<string, string> = {};
       attributes.forEach((a) => {
         if (a.key.trim() && a.value.trim()) {
@@ -542,9 +735,8 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
         description,
         categoryId,
         brandId: brandId || null,
-        status: submitForReview ? "PUBLISHED" : status,
-        submitForReview,
-        stageEditsIfPublished: true, // Safeguard: preserves live approved version
+        submitForReview: mode === "submit",
+        ...(mode === "offline" ? { status: "DRAFT" } : mode === "online" ? { status: "PUBLISHED" } : {}),
         weightGrams: Number(weightGrams) || 500,
         metaTitle: metaTitle.trim() || null,
         metaDescription: metaDescription.trim() || null,
@@ -569,7 +761,17 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
           barcode: v.barcode || null,
           attributes: v.attributes,
           isActive: v.isActive,
-          availableUnits: Math.max(0, Math.floor(v.stock)),
+          // Existing variants: desired stock + what was loaded (applied as a delta).
+          // New variants: opening stock.
+          ...(v.id
+            ? { availableUnits: Math.max(0, Math.floor(v.stock)), stockBaseline: v.stockBaseline }
+            : initialProductId
+            ? { availableUnits: Math.max(0, Math.floor(v.stock)) }
+            : { initialStock: Math.max(0, Math.floor(v.stock)) }),
+          lowStockThreshold: Math.max(0, Math.floor(v.lowStockThreshold)),
+          dealPriceMinor: v.dealPricePkr !== "" ? Math.round(Number(v.dealPricePkr) * 100) : null,
+          dealStartsAt: localInputToIso(v.dealStartsAt),
+          dealEndsAt: localInputToIso(v.dealEndsAt),
         })),
       };
 
@@ -589,17 +791,52 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
         throw new Error(data.error || "Failed to save product.");
       }
 
-      setSaveMessage(
-        submitForReview
-          ? "Product submitted for platform approval! Live public listings remain safe."
-          : "Product draft saved successfully."
-      );
-
       if (!initialProductId && data.product?.id) {
-        router.push(`/seller/portal/products/${data.product.id}`);
-      } else if (data.product) {
-        setModerationStatus(data.product.moderationStatus || "DRAFT");
-        setHasPendingChanges(Boolean(data.product.pendingChangesJson));
+        router.push(`/seller/portal/products/${data.product.id}?created=${mode === "submit" ? "submitted" : "draft"}`);
+        return;
+      }
+
+      const p = data.product;
+      if (p) {
+        setStatus(p.status);
+        setModerationStatus(p.moderationStatus || "DRAFT");
+        setModerationNotes(p.moderationNotes || null);
+        setHasPendingChanges(Boolean(p.pendingChangesJson));
+        setIsApprovedListing(Boolean(p.isApprovedByPlatform));
+        if (!p.pendingChangesJson && p.variants?.length) {
+          // Re-sync with the server: new variant ids, stock baselines, deal state
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          setVariants(p.variants.filter((v: any) => v.isActive).map(variantFromServer));
+        } else if (p.variants?.length) {
+          // Content is in review: keep the seller's edits on screen, refresh stock baselines
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const byId = new Map<string, any>(p.variants.map((v: any) => [v.id, v]));
+          setVariants((prev) =>
+            prev.map((v) => {
+              const fresh = v.id ? byId.get(v.id) : undefined;
+              return fresh
+                ? {
+                    ...v,
+                    stock: fresh.inventoryLevel?.availableUnits ?? v.stock,
+                    stockBaseline: fresh.inventoryLevel?.availableUnits ?? v.stockBaseline,
+                    reservedUnits: fresh.inventoryLevel?.reservedUnits ?? v.reservedUnits,
+                  }
+                : v;
+            })
+          );
+        }
+
+        const contentInReview = Boolean(p.pendingChangesJson);
+        let message: string;
+        if (mode === "offline") message = "Listing taken offline. Shoppers can no longer see or buy it.";
+        else if (mode === "online") message = "Listing is back on the store.";
+        else if (contentInReview)
+          message = "Saved. Price, stock and deal changes are live; content changes are waiting for WIZZ.PK review.";
+        else if (p.moderationStatus === "PENDING_REVIEW")
+          message = "Submitted for review. WIZZ.PK checks new listings before they go live.";
+        else if (p.status === "PUBLISHED") message = "Saved. Your changes are live on the store.";
+        else message = "Draft saved.";
+        setSaveMessage(message);
       }
     } catch (err: unknown) {
       setErrorMessage(err instanceof Error ? err.message : "Error saving product.");
@@ -622,7 +859,7 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-16">
       {/* Top Breadcrumb & Actions Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm sticky top-20 z-40">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm sticky top-[124px] z-20">
         <div className="flex items-center gap-3">
           <Link
             href="/seller/portal/products"
@@ -635,41 +872,46 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
               <h1 className="text-lg font-black text-slate-900 tracking-tight truncate max-w-md">
                 {title || (initialProductId ? "Edit Listing" : "Create New Product")}
               </h1>
-              {/* Moderation Badge */}
+              {/* Listing status */}
               <Badge
                 variant={
-                  moderationStatus === "APPROVED"
+                  status === "PUBLISHED"
                     ? "success"
-                    : moderationStatus === "PENDING_REVIEW"
-                    ? "warning"
-                    : moderationStatus === "CHANGES_REQUESTED"
-                    ? "warning"
                     : moderationStatus === "REJECTED"
                     ? "danger"
+                    : moderationStatus === "PENDING_REVIEW" || moderationStatus === "CHANGES_REQUESTED"
+                    ? "warning"
                     : "neutral"
                 }
-                className="text-[11px] font-bold uppercase tracking-wider"
+                className="text-[11px] font-bold whitespace-nowrap"
               >
-                {moderationStatus === "PENDING_REVIEW"
-                  ? "Under Review"
+                {status === "PUBLISHED"
+                  ? "Live on store"
+                  : status === "ARCHIVED"
+                  ? "Archived"
+                  : isApprovedListing
+                  ? "Offline"
+                  : moderationStatus === "PENDING_REVIEW"
+                  ? "In review"
                   : moderationStatus === "CHANGES_REQUESTED"
-                  ? "Changes Requested"
-                  : moderationStatus}
+                  ? "Changes requested"
+                  : moderationStatus === "REJECTED"
+                  ? "Rejected"
+                  : "Draft"}
               </Badge>
-              {status === "PUBLISHED" && (
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                  Live on Store
-                </span>
+              {hasPendingChanges && moderationStatus === "PENDING_REVIEW" && (
+                <Badge variant="warning" className="text-[11px] font-bold whitespace-nowrap">
+                  Edits in review
+                </Badge>
               )}
             </div>
-            <p className="text-xs text-slate-400 mt-0.5">
-              {variants.length} variant(s) configured &bull; {images.length} photo(s)
+            <p className="text-xs text-slate-500 mt-0.5">
+              {variants.length} variant{variants.length === 1 ? "" : "s"}, {images.length} photo{images.length === 1 ? "" : "s"}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5">
-          {/* Storefront Live Preview Modal Trigger */}
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button"
             variant="outline"
@@ -678,37 +920,98 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
             className="text-xs"
           >
             <Eye size={14} />
-            <span>Storefront Preview</span>
+            <span>Preview</span>
           </Button>
 
-          {/* Save Draft */}
+          {isApprovedListing && status === "PUBLISHED" && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleSave("offline")}
+              disabled={isSaving}
+              className="text-xs"
+            >
+              <span>Take offline</span>
+            </Button>
+          )}
+          {isApprovedListing && status === "DRAFT" && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleSave("online")}
+              disabled={isSaving || !canSell}
+              className="text-xs"
+            >
+              <span>Put back online</span>
+            </Button>
+          )}
+
           <Button
             type="button"
-            variant="secondary"
+            variant={isApprovedListing ? "primary" : "secondary"}
             size="sm"
-            onClick={() => handleSave(false)}
+            onClick={() => handleSave("save")}
             isLoading={isSaving}
             disabled={isSaving}
             className="text-xs font-semibold"
           >
             <Save size={14} />
-            <span>Save Draft</span>
+            <span>{isApprovedListing ? "Save changes" : "Save draft"}</span>
           </Button>
 
-          {/* Submit / Publish */}
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => handleSave(true)}
-            isLoading={isSaving}
-            disabled={isSaving}
-            className="text-xs font-bold shadow-md shadow-emerald-600/20"
-          >
-            <Send size={14} />
-            <span>{status === "PUBLISHED" ? "Submit Revisions" : "Publish Listing"}</span>
-          </Button>
+          {!isApprovedListing && (
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => handleSave("submit")}
+              isLoading={isSaving}
+              disabled={isSaving || !canSell}
+              title={canSell ? undefined : "Your store must be approved before listings can go live."}
+              className="text-xs font-bold"
+            >
+              <Send size={14} />
+              <span>
+                {isFirstPartyStore
+                  ? "Publish"
+                  : moderationStatus === "CHANGES_REQUESTED" || moderationStatus === "REJECTED"
+                  ? "Resubmit for review"
+                  : moderationStatus === "PENDING_REVIEW"
+                  ? "Update submission"
+                  : "Submit for review"}
+              </span>
+            </Button>
+          )}
+          {isApprovedListing && moderationStatus === "CHANGES_REQUESTED" && hasPendingChanges && (
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => handleSave("submit")}
+              isLoading={isSaving}
+              disabled={isSaving}
+              className="text-xs font-bold"
+            >
+              <Send size={14} />
+              <span>Resubmit edits</span>
+            </Button>
+          )}
         </div>
       </div>
+
+      {/* How saving works for this listing */}
+      {isApprovedListing && !isFirstPartyStore && (
+        <p className="text-xs text-slate-600 bg-white border border-slate-200 rounded-xl px-4 py-3">
+          <strong className="text-slate-900">Price, stock and deal changes go live as soon as you save.</strong>{" "}
+          Changes to the title, description, photos, category, specifications or new variants are checked by WIZZ.PK first;
+          shoppers keep seeing the current version until they are approved.
+        </p>
+      )}
+      {!canSell && (
+        <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+          You can prepare drafts now. Listings can be submitted once your store is approved.
+        </p>
+      )}
 
       {/* Feedback Alerts */}
       {saveMessage && (
@@ -736,19 +1039,19 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
             {moderationNotes}
           </p>
           <p className="text-[11px] text-amber-800 pl-6">
-            Make the requested corrections below and click <strong>Submit Revisions</strong> to resubmit for platform approval.
+            Make the requested corrections below, then choose <strong>{isApprovedListing ? "Resubmit edits" : "Resubmit for review"}</strong>.
           </p>
         </div>
       )}
 
       {/* Staged Revisions Banner for Published Products */}
-      {hasPendingChanges && moderationStatus === "PENDING_REVIEW" && status === "PUBLISHED" && (
+      {hasPendingChanges && moderationStatus === "PENDING_REVIEW" && (
         <div className="p-4 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-950 flex items-start gap-3 text-xs">
           <HelpCircle size={16} className="text-indigo-600 shrink-0 mt-0.5" />
           <div className="space-y-1">
-            <p className="font-bold">Pending Revisions Under Platform Review</p>
+            <p className="font-bold">Content edits waiting for review</p>
             <p className="text-slate-600 leading-relaxed">
-              Your edits are staged and awaiting administrative approval. Public shoppers continue to see the approved active listing on the WIZZ.PK storefront until this revision is approved.
+              Shoppers see the approved version until WIZZ.PK approves these edits. Saving again replaces the edits in review.
             </p>
           </div>
         </div>
@@ -801,20 +1104,51 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
               />
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Product Description <span className="text-rose-500">*</span>
-                </label>
-                <textarea
-                  rows={6}
-                  required
-                  placeholder="Detail the specifications, materials, features, and key selling points..."
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  className="w-full text-xs rounded-xl border border-slate-300 p-3 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-sans"
-                />
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Formatting tip: Clear bullet points and benefit summaries boost conversion on WIZZ.PK.
-                </p>
+                <div className="flex items-center justify-between mb-1">
+                  <label htmlFor="product-description" className="block text-xs font-bold text-slate-700">
+                    Product Description <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="flex rounded-lg border border-slate-200 p-0.5 text-[11px] font-semibold">
+                    <button
+                      type="button"
+                      onClick={() => setShowDescriptionPreview(false)}
+                      aria-pressed={!showDescriptionPreview}
+                      className={`px-2.5 py-1 rounded-md ${!showDescriptionPreview ? "bg-slate-900 text-white" : "text-slate-600 hover:text-slate-900"}`}
+                    >
+                      Write
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowDescriptionPreview(true)}
+                      aria-pressed={showDescriptionPreview}
+                      className={`px-2.5 py-1 rounded-md ${showDescriptionPreview ? "bg-slate-900 text-white" : "text-slate-600 hover:text-slate-900"}`}
+                    >
+                      Preview
+                    </button>
+                  </div>
+                </div>
+                {showDescriptionPreview ? (
+                  <div className="min-h-[180px] rounded-xl border border-slate-200 p-4 bg-slate-50/50">
+                    <ProductDescription text={description} />
+                  </div>
+                ) : (
+                  <textarea
+                    id="product-description"
+                    rows={10}
+                    maxLength={20000}
+                    placeholder={"What it is and who it's for.\n\n## Key features\n- Feature one\n- Feature two\n\n## In the box\n- Item"}
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    className="w-full text-sm rounded-xl border border-slate-300 p-3 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-sans leading-relaxed"
+                  />
+                )}
+                <div className="flex flex-wrap items-center justify-between gap-2 mt-1 text-[11px] text-slate-500">
+                  <span>
+                    Formatting: blank line for a new paragraph, <code className="font-mono">## </code>for a heading,{" "}
+                    <code className="font-mono">- </code>for a bullet, <code className="font-mono">**bold**</code>.
+                  </span>
+                  <span className="tabular-nums">{description.length.toLocaleString()} / 20,000</span>
+                </div>
               </div>
             </div>
 
@@ -884,18 +1218,19 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
               <div>
                 <h2 className="text-sm font-bold text-slate-900">Product Photography & Media</h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Upload multiple clean images. Select primary thumbnail, reorder sequence, and provide alt text.
+                  Up to {MAX_IMAGES} JPEG, PNG, WEBP or GIF images, 10 MB each. The primary image is shown in search
+                  results; square photos on a plain background work best.
                 </p>
               </div>
 
               <div className="flex items-center gap-2">
                 <label className="cursor-pointer inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition-colors shadow-sm">
                   <UploadCloud size={14} />
-                  <span>{isUploadingImage ? "Uploading..." : "Upload From Device"}</span>
+                  <span>{isUploadingImage ? "Uploading..." : `Upload photos (${images.length}/${MAX_IMAGES})`}</span>
                   <input
                     type="file"
                     multiple
-                    accept="image/*"
+                    accept={ACCEPTED_IMAGE_TYPES.join(",")}
                     onChange={handleFileUpload}
                     className="hidden"
                     disabled={isUploadingImage}
@@ -920,16 +1255,29 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
             </div>
 
             {/* Image Grid */}
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDraggingFiles(true);
+              }}
+              onDragLeave={() => setIsDraggingFiles(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDraggingFiles(false);
+                if (e.dataTransfer.files?.length) void uploadFiles(e.dataTransfer.files);
+              }}
+              className={`rounded-3xl transition-colors ${isDraggingFiles ? "ring-2 ring-emerald-500 bg-emerald-50/40" : ""}`}
+            >
             {images.length === 0 ? (
               <div className="border-2 border-dashed border-slate-200 rounded-3xl p-12 text-center space-y-2">
                 <ImageIcon className="mx-auto text-slate-300" size={40} />
-                <p className="text-xs font-bold text-slate-700">No images added yet</p>
-                <p className="text-[11px] text-slate-400">
-                  Upload crisp photos showing front, back, and packaging. WIZZ.PK displays high-resolution thumbnails.
+                <p className="text-xs font-bold text-slate-700">Drag photos here, or use Upload photos</p>
+                <p className="text-[11px] text-slate-500">
+                  Show the front, back, details and packaging. At least one photo is needed to submit.
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 {images.map((img, idx) => (
                   <div
                     key={idx}
@@ -964,6 +1312,7 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
                           disabled={idx === 0}
                           className="p-1 rounded text-slate-500 hover:text-slate-900 disabled:opacity-30"
                           title="Move earlier"
+                          aria-label="Move image earlier"
                         >
                           <ArrowUp size={13} />
                         </button>
@@ -973,6 +1322,7 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
                           disabled={idx === images.length - 1}
                           className="p-1 rounded text-slate-500 hover:text-slate-900 disabled:opacity-30"
                           title="Move later"
+                          aria-label="Move image later"
                         >
                           <ArrowDown size={13} />
                         </button>
@@ -993,6 +1343,7 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
                           onClick={() => handleRemoveImage(idx)}
                           className="p-1 rounded text-rose-500 hover:text-rose-700 hover:bg-rose-50"
                           title="Remove image"
+                          aria-label="Remove image"
                         >
                           <Trash2 size={13} />
                         </button>
@@ -1002,6 +1353,7 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
                 ))}
               </div>
             )}
+            </div>
           </div>
         </div>
       )}
@@ -1106,13 +1458,72 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
             </div>
           </div>
 
+          {/* Deal scheduler (special price for a time window) */}
+          <div className="bg-white border border-orange-200 p-4 rounded-2xl space-y-3 text-xs">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <p className="font-bold text-slate-900 flex items-center gap-1.5">
+                  <Tag size={14} className="text-orange-600" />
+                  <span>Run a deal</span>
+                </p>
+                <p className="text-slate-500 mt-0.5">
+                  A deal sells at a lower price between the start and end time, then returns to the regular price
+                  automatically. Shoppers see the regular price struck through and the product appears in Deals.
+                </p>
+              </div>
+              {variants.some((v) => v.dealPricePkr !== "") && (
+                <button type="button" onClick={handleClearDeals} className="text-rose-600 font-semibold hover:underline">
+                  Remove all deals
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="space-y-1">
+                <span className="block font-semibold text-slate-700">Discount %</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={99}
+                  placeholder="e.g. 15"
+                  value={bulkDealPercent}
+                  onChange={(e) => setBulkDealPercent(e.target.value)}
+                  className="w-24 rounded-lg border border-slate-300 p-2 bg-white"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="block font-semibold text-slate-700">Starts</span>
+                <input
+                  type="datetime-local"
+                  value={bulkDealStart}
+                  onChange={(e) => setBulkDealStart(e.target.value)}
+                  className="rounded-lg border border-slate-300 p-2 bg-white"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="block font-semibold text-slate-700">Ends</span>
+                <input
+                  type="datetime-local"
+                  value={bulkDealEnd}
+                  onChange={(e) => setBulkDealEnd(e.target.value)}
+                  className="rounded-lg border border-slate-300 p-2 bg-white"
+                />
+              </label>
+              <Button type="button" size="sm" variant="accent" onClick={handleApplyBulkDeal}>
+                Apply to all variants
+              </Button>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              Or set a deal per variant in the table below. Deal changes are saved with the listing and go live without review.
+            </p>
+          </div>
+
           {/* Variant Rows Table */}
           <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden">
             <div className="p-5 border-b border-slate-100 flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-bold text-slate-900">Active Variants ({variants.length})</h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Every variant must have a unique SKU and non-negative stock.
+                  Each variant needs a unique SKU. Removed variants stop selling when you save; past orders keep their details.
                 </p>
               </div>
 
@@ -1128,9 +1539,10 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
                   <tr>
                     <th className="py-3 px-4">Variant Title</th>
                     <th className="py-3 px-4">SKU Code</th>
-                    <th className="py-3 px-4">Selling Price (Rs.)</th>
-                    <th className="py-3 px-4">Original Compare-At (Rs.)</th>
-                    <th className="py-3 px-4">Stock Units</th>
+                    <th className="py-3 px-4">Price (Rs.)</th>
+                    <th className="py-3 px-4">&ldquo;Was&rdquo; price (Rs.)</th>
+                    <th className="py-3 px-4">Deal</th>
+                    <th className="py-3 px-4">Stock</th>
                     <th className="py-3 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -1162,7 +1574,9 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
                         <td className="py-3 px-4">
                           <input
                             type="number"
-                            min={0}
+                            min={1}
+                            step="any"
+                            aria-label={`Price for ${v.title}`}
                             value={v.pricePkr}
                             onChange={(e) =>
                               handleVariantChange(idx, "pricePkr", parseFloat(e.target.value) || 0)
@@ -1174,7 +1588,8 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
                           <div className="space-y-1">
                             <input
                               type="number"
-                              placeholder="Optional promo"
+                              placeholder="Optional"
+                              aria-label={`Was price for ${v.title}`}
                               value={v.compareAtPricePkr}
                               onChange={(e) =>
                                 handleVariantChange(
@@ -1194,25 +1609,106 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
                             )}
                           </div>
                         </td>
-                        <td className="py-3 px-4">
-                          <input
-                            type="number"
-                            min={0}
-                            value={v.stock}
-                            onChange={(e) =>
-                              handleVariantChange(idx, "stock", parseInt(e.target.value, 10) || 0)
-                            }
-                            className={`w-24 text-xs font-bold rounded-lg border p-1.5 bg-white ${
-                              isStockInvalid ? "border-rose-500 bg-rose-50" : "border-slate-200"
-                            }`}
-                          />
+                        <td className="py-3 px-4 align-top">
+                          {(() => {
+                            const state = dealState(v, nowTs);
+                            const dealInvalid =
+                              v.dealPricePkr !== "" && Number(v.dealPricePkr) >= Number(v.pricePkr);
+                            return (
+                              <div className="space-y-1 min-w-[190px]">
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    step="any"
+                                    placeholder="Deal price"
+                                    aria-label={`Deal price for ${v.title}`}
+                                    value={v.dealPricePkr}
+                                    onChange={(e) =>
+                                      handleVariantChange(
+                                        idx,
+                                        "dealPricePkr",
+                                        e.target.value === "" ? "" : parseFloat(e.target.value)
+                                      )
+                                    }
+                                    className={`w-24 text-xs rounded-lg border p-1.5 bg-white ${
+                                      dealInvalid ? "border-rose-500 bg-rose-50" : "border-slate-200"
+                                    }`}
+                                  />
+                                  {state === "live" && (
+                                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-orange-100 text-orange-800">Live</span>
+                                  )}
+                                  {state === "scheduled" && (
+                                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">Scheduled</span>
+                                  )}
+                                  {state === "ended" && (
+                                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">Ended</span>
+                                  )}
+                                </div>
+                                {v.dealPricePkr !== "" && (
+                                  <>
+                                    <input
+                                      type="datetime-local"
+                                      aria-label={`Deal start for ${v.title}`}
+                                      value={v.dealStartsAt}
+                                      onChange={(e) => handleVariantChange(idx, "dealStartsAt", e.target.value)}
+                                      className="w-full text-[11px] rounded-lg border border-slate-200 p-1 bg-white"
+                                    />
+                                    <input
+                                      type="datetime-local"
+                                      aria-label={`Deal end for ${v.title}`}
+                                      value={v.dealEndsAt}
+                                      onChange={(e) => handleVariantChange(idx, "dealEndsAt", e.target.value)}
+                                      className="w-full text-[11px] rounded-lg border border-slate-200 p-1 bg-white"
+                                    />
+                                  </>
+                                )}
+                                {dealInvalid && (
+                                  <p className="text-[10px] text-rose-600 font-semibold">Must be below Rs. {v.pricePkr}</p>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </td>
+                        <td className="py-3 px-4 align-top">
+                          <div className="space-y-1">
+                            <input
+                              type="number"
+                              min={0}
+                              aria-label={`Stock for ${v.title}`}
+                              value={v.stock}
+                              onChange={(e) =>
+                                handleVariantChange(idx, "stock", parseInt(e.target.value, 10) || 0)
+                              }
+                              className={`w-24 text-xs font-bold rounded-lg border p-1.5 bg-white ${
+                                isStockInvalid ? "border-rose-500 bg-rose-50" : "border-slate-200"
+                              }`}
+                            />
+                            {(v.reservedUnits ?? 0) > 0 && (
+                              <p className="text-[10px] text-slate-500">{v.reservedUnits} held in checkouts</p>
+                            )}
+                            <label className="flex items-center gap-1 text-[10px] text-slate-500">
+                              <span>Alert at</span>
+                              <input
+                                type="number"
+                                min={0}
+                                aria-label={`Low stock alert level for ${v.title}`}
+                                value={v.lowStockThreshold}
+                                onChange={(e) =>
+                                  handleVariantChange(idx, "lowStockThreshold", Math.max(0, parseInt(e.target.value, 10) || 0))
+                                }
+                                className="w-12 rounded border border-slate-200 p-0.5 bg-white"
+                              />
+                            </label>
+                          </div>
                         </td>
                         <td className="py-3 px-4 text-right">
                           <button
                             type="button"
                             onClick={() => handleRemoveVariant(idx)}
                             className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50"
-                            title="Delete variant"
+                            title="Remove variant"
+                            aria-label={`Remove variant ${v.title}`}
                           >
                             <Trash2 size={14} />
                           </button>
@@ -1474,9 +1970,7 @@ export function SellerProductEditor({ initialProductId }: SellerProductEditorPro
               {/* Description preview */}
               <div className="border-t border-slate-100 pt-6 space-y-3">
                 <h3 className="text-sm font-bold text-slate-900">Product Overview</h3>
-                <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-wrap">
-                  {description || "No description provided."}
-                </p>
+                <ProductDescription text={description} className="text-xs" />
               </div>
 
               {/* Attributes Table */}

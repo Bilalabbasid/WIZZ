@@ -16,7 +16,8 @@ const MAJOR_CITIES = [
   { name: "Gujranwala", region: "Punjab", postal: "52250", deliveryDays: "2-3 days" },
 ];
 
-export function DeliveryLocationSelector() {
+export function DeliveryLocationSelector({ tone = "light" }: { tone?: "light" | "dark" }) {
+  const onDark = tone === "dark";
   const [selectedCity, setSelectedCity] = useState<string>("Karachi");
   const [isOpen, setIsOpen] = useState<boolean>(false);
 
@@ -74,17 +75,17 @@ export function DeliveryLocationSelector() {
         ref={triggerRef}
         type="button"
         onClick={() => setIsOpen(true)}
-        className="flex items-center gap-1.5 py-1 px-2 rounded-lg text-slate-700 hover:bg-slate-100 transition-colors text-left group min-h-[44px]"
+        className={`flex items-center gap-1.5 py-1 px-2 rounded-lg transition-colors text-left group min-h-[44px] ${onDark ? "text-white hover:bg-white/10" : "text-slate-700 hover:bg-slate-100"}`}
         title="Choose delivery destination"
         aria-label={`Deliver to ${selectedCity}`}
         aria-expanded={isOpen}
       >
-        <MapPin size={16} className="text-emerald-600 flex-shrink-0" />
+        <MapPin size={16} className={`${onDark ? "text-emerald-300" : "text-emerald-600"} flex-shrink-0`} />
         <div className="leading-tight hidden sm:block">
-          <span className="block text-[10px] text-slate-400 font-medium">Deliver to</span>
-          <span className="block text-xs font-bold text-slate-900 group-hover:text-emerald-600 transition-colors flex items-center gap-0.5">
+          <span className={`block text-[10px] font-medium ${onDark ? "text-emerald-100/70" : "text-slate-400"}`}>Deliver to</span>
+          <span className={`text-xs font-bold transition-colors flex items-center gap-0.5 ${onDark ? "text-white" : "text-slate-900 group-hover:text-emerald-600"}`}>
             {selectedCity}
-            <ChevronDown size={11} className="text-slate-400" />
+            <ChevronDown size={11} className={onDark ? "text-emerald-100/70" : "text-slate-400"} />
           </span>
         </div>
       </button>

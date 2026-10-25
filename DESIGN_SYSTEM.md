@@ -122,6 +122,16 @@ To ensure WIZZ.PK avoids generic AI/SaaS-style defaults (oversized heroes, paste
 
 ## 4. Established Marketplace Architecture (Amazon / eBay / Daraz Patterns)
 
+### 4.0 Storefront Polish Revision (2026-10-25)
+Supersedes the header colours and homepage composition below where they differ.
+- **Brand band**: the header's main bar uses Pakistan green `--color-brand-ink: #013b23` (utility strip `#012a19`, hover `#0a5233`), white logotype, white search field and an orange-600 search button. Orange is the single action accent in the header and for "Add to cart"; rose-600 stays reserved for discount badges and Deals.
+- **Canvas**: `--background: #f1f4f2`, so white section panels (`rounded-lg`, 1px slate-200 border, no shadow) separate clearly, as on marketplace homepages.
+- **Fonts**: Plus Jakarta Sans loaded through `next/font/google` (self-hosted, no render-blocking CSS import).
+- **Homepage**: hero row = category rail (lg+) | carousel of real marked-down products (biggest genuine discount first, pause control, honours reduced motion) | account, active-coupon and service panel (xl+). A coupon shows only when an active, in-date, under-limit `Coupon` row exists. Then Deals rail, image category tiles, Top picks grid (2/3/4/6 cols), New arrivals rail. The duplicate trust strip was removed; the footer carries it.
+- **Product card**: no wishlist control until a wishlist API exists. Price set as small "Rs." plus a large tabular amount, compare-at price struck through below, delivery line ("Free delivery" above the configured threshold) and seller line. Quick add over the image on hover/focus refreshes the header cart count. Failed images fall back to a neutral package icon, including failures before hydration.
+- **Listings**: 2 / 3 / 4 columns (mobile / md / xl).
+- **Free-delivery copy** always reads `SITE_CONFIG.shipping.freeShippingThresholdMinor`; never hardcode the amount.
+
 ### 4.1 Header & Navigation (3-Tier Structure)
 1. **Tier 1: Top Utility Strip** (`bg-slate-900 text-slate-300 text-xs`):
    - Nationwide delivery guarantee banner ("Fast Tracked Shipping across Pakistan • TCS & Leopards").

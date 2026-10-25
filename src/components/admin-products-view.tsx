@@ -25,6 +25,46 @@ export interface AdminProductItem {
   media: Array<{ url: string }>;
 }
 
+/** Lists what a seller's staged revision would change, so reviewers know what they approve. */
+function summarizeRevision(json: string | null | undefined, currentTitle: string): string[] {
+  if (!json) return [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let rev: any;
+  try {
+    rev = JSON.parse(json);
+  } catch {
+    return ["Staged revision could not be read"];
+  }
+  const out: string[] = [];
+  if (rev.title && rev.title !== currentTitle) out.push(`Title: "${rev.title}"`);
+  if (rev.description !== undefined) out.push("Description rewritten");
+  if (rev.images) out.push(`Photos: ${rev.images.length} image(s), new set`);
+  if (rev.categoryId) out.push("Category changed");
+  if (rev.brandId !== undefined) out.push("Brand changed");
+  if (rev.attributes) out.push(`Specifications: ${Object.keys(rev.attributes).length} field(s)`);
+  if (rev.metaTitle !== undefined || rev.metaDescription !== undefined) out.push("SEO text changed");
+  if (rev.slug) out.push(`URL: /products/${rev.slug}`);
+  if (rev.weightGrams !== undefined || rev.lengthMm !== undefined) out.push("Package size/weight changed");
+  if (rev.variantContent?.length) out.push(`${rev.variantContent.length} variant name/SKU change(s)`);
+  if (rev.newVariants?.length) out.push(`${rev.newVariants.length} new variant(s)`);
+  if (rev.variants?.length && !rev.variantContent) out.push(`${rev.variants.length} variant(s) (legacy revision)`);
+  return out.length ? out : ["No visible content changes"];
+}
+
+async function postModeration(productId: string, body: Record<string, string>) {
+  const res = await fetch(`/api/admin/products/${productId}/moderation`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (res.ok) {
+    window.location.reload();
+    return;
+  }
+  const data = await res.json().catch(() => ({}));
+  window.alert(data.error || "The moderation action failed. Please try again.");
+}
+
 export function AdminProductsView({
   products: initialProducts,
   categories,
@@ -151,6 +191,12 @@ export function AdminProductsView({
                     Seller: <strong className="text-emerald-400">{(p as any).sellerOrg?.name || "WIZZ.PK Direct"}</strong> &bull; Category: <strong className="text-slate-300">{p.category.name}</strong> &bull; Main SKU:{" "}
                     <span className="font-mono text-slate-300">{mainVariant?.sku || "N/A"}</span>
                   </p>
+                  {hasPendingRevisions && (
+                    <div className="text-[11px] text-indigo-200 bg-indigo-500/10 border border-indigo-500/20 rounded-lg px-2.5 py-1.5">
+                      <span className="font-bold">Proposed changes:</span>{" "}
+                      {summarizeRevision((p as any).pendingChangesJson, p.title).join("; ")}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -175,12 +221,7 @@ export function AdminProductsView({
                       type="button"
                       onClick={async () => {
                         if (!confirm(`Approve listing / staged revisions for "${p.title}"?`)) return;
-                        const res = await fetch(`/api/admin/products/${p.id}/moderation`, {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ action: "APPROVE" }),
-                        });
-                        if (res.ok) window.location.reload();
+                        await postModeration(p.id, { action: "APPROVE" });
                       }}
                       className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] transition"
                     >
@@ -191,12 +232,7 @@ export function AdminProductsView({
                       onClick={async () => {
                         const reason = prompt("Enter requested changes or correction notes:");
                         if (!reason) return;
-                        const res = await fetch(`/api/admin/products/${p.id}/moderation`, {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ action: "REQUEST_CHANGES", reason }),
-                        });
-                        if (res.ok) window.location.reload();
+                        await postModeration(p.id, { action: "REQUEST_CHANGES", reason });
                       }}
                       className="px-2.5 py-1 rounded-lg bg-amber-600/80 hover:bg-amber-600 text-white font-bold text-[10px] transition"
                     >

@@ -79,16 +79,26 @@ async function runE2EFunctionalAudit() {
   console.log("🛒 [JOURNEY 1] Guest Discovers Product, Adds to Cart & Checks Out with COD");
 
   // Step 1: Product Discovery
-  const catalog = await getProducts({ limit: 5 });
+  const catalog = await getProducts({ limit: 50 });
   assert(catalog.products.length > 0, "Guest discovers published products in catalog");
-  const testProduct = catalog.products[0];
+  // This journey pays by COD, so pick an in-stock product COD can cover
+  const testProduct =
+    catalog.products.find((p) =>
+      p.variants.some(
+        (v) =>
+          v.priceMinor * 2 <= SITE_CONFIG.cod.maxOrderLimitMinor &&
+          (v.inventoryLevel?.availableUnits ?? 0) - (v.inventoryLevel?.reservedUnits ?? 0) >= 2
+      )
+    ) ?? catalog.products[0];
   assert(Boolean(testProduct.slug), `Discovered product slug: "${testProduct.slug}"`);
 
   // Step 2: Product Detail & Variant Selection
   const productDetail = await getProductBySlug(testProduct.slug);
   assert(productDetail !== null, "Guest views product detail page");
   assert(productDetail!.variants.length > 0, "Product has active variants");
-  const chosenVariant = productDetail!.variants[0];
+  const chosenVariant =
+    productDetail!.variants.find((v) => v.priceMinor * 2 <= SITE_CONFIG.cod.maxOrderLimitMinor) ??
+    productDetail!.variants[0];
   assert(Boolean(chosenVariant.id), `Selected variant: ${chosenVariant.title} (${chosenVariant.sku})`);
 
   // Step 3: Guest Cart Management

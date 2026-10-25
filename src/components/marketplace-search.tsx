@@ -108,14 +108,14 @@ export function MarketplaceSearch({
     <div ref={wrapperRef} className="relative w-full">
       <form
         onSubmit={handleSubmit}
-        className="flex items-center w-full rounded-xl border-2 border-slate-300 focus-within:border-emerald-600 focus-within:ring-2 focus-within:ring-emerald-100 transition-all bg-white overflow-hidden shadow-xs"
+        className="flex items-stretch w-full h-11 rounded-lg border-2 border-transparent focus-within:border-orange-400 transition-colors bg-white overflow-hidden"
       >
         {/* Category Dropdown (Desktop) */}
-        <div className="hidden md:flex items-center relative border-r border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors">
+        <div className="hidden md:flex items-center relative border-r border-slate-200 bg-slate-100 hover:bg-slate-200/70 transition-colors">
           <select
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
-            className="appearance-none bg-transparent py-2.5 pl-3 pr-7 text-xs font-semibold text-slate-700 cursor-pointer focus:outline-none"
+            className="appearance-none bg-transparent h-full max-w-[150px] truncate pl-3 pr-7 text-xs font-semibold text-slate-700 cursor-pointer focus:outline-none"
             aria-label="Filter by department"
           >
             <option value="">All Categories</option>
@@ -142,8 +142,8 @@ export function MarketplaceSearch({
               setIsOpen(true);
             }}
             onFocus={() => setIsOpen(true)}
-            placeholder="Search verified hardware, chargers, peripherals..."
-            className="w-full py-2.5 pl-3.5 pr-8 text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none font-medium"
+            placeholder="Search products and brands"
+            className="w-full h-full pl-3.5 pr-8 text-sm text-slate-900 placeholder:text-slate-500 focus:outline-none font-medium [&::-webkit-search-cancel-button]:hidden"
             autoComplete="off"
             aria-autocomplete="list"
             aria-expanded={isOpen && hasSuggestions}
@@ -166,7 +166,7 @@ export function MarketplaceSearch({
         {/* Search Submit Button */}
         <button
           type="submit"
-          className="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white px-4 sm:px-5 py-2.5 flex items-center justify-center transition-colors font-bold flex-shrink-0"
+          className="bg-orange-600 hover:bg-orange-700 active:bg-orange-800 text-white w-12 sm:w-14 flex items-center justify-center transition-colors flex-shrink-0"
           aria-label="Submit search"
         >
           <Search size={18} />
@@ -175,7 +175,7 @@ export function MarketplaceSearch({
 
       {/* Live Auto-Suggest Popover */}
       {isOpen && (hasSuggestions || (query.length >= 2 && !isLoading)) && (
-        <div className="absolute top-full left-0 right-0 mt-1.5 bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden z-50 divide-y divide-slate-100 max-h-96 overflow-y-auto animate-in fade-in-50 duration-100">
+        <div className="absolute top-full left-0 right-0 mt-1.5 bg-white rounded-xl border border-slate-200 shadow-xl overflow-hidden z-50 divide-y divide-slate-100 max-h-96 overflow-y-auto animate-in fade-in-50 duration-100">
           {/* Matched Categories */}
           {suggestedCategories.length > 0 && (
             <div className="p-2.5 bg-slate-50/70">

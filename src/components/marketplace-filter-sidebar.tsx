@@ -2,6 +2,8 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import { formatCurrency } from "@/lib/formatters";
+import { SITE_CONFIG } from "@/lib/config";
 import {
   SlidersHorizontal,
   Check,
@@ -191,7 +193,7 @@ export function MarketplaceFilterSidebar({
           >
             <span className="flex items-center gap-2">
               <Truck size={13} className="text-emerald-600" />
-              <span>Free Shipping (PKR 5,000+)</span>
+              <span>Free Delivery ({formatCurrency(SITE_CONFIG.shipping.freeShippingThresholdMinor)}+)</span>
             </span>
             {freeShippingOnly && <Check size={14} className="text-emerald-600" />}
           </Link>
@@ -396,7 +398,7 @@ export function MarketplaceFilterSidebar({
           {[
             { label: "Under PKR 5,000", min: "0", max: "5000" },
             { label: "PKR 5,000 to PKR 15,000", min: "5000", max: "15000" },
-            { label: "PKR 15,000 to PKR 50,000", min: "15000", max: "5000" },
+            { label: "PKR 15,000 to PKR 50,000", min: "15000", max: "50000" },
             { label: "Over PKR 50,000", min: "50000", max: "" },
           ].map((band, idx) => {
             const isBandActive =

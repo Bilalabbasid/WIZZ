@@ -9,6 +9,7 @@ export const SITE_CONFIG = {
   supportPhone: process.env.SUPPORT_PHONE || "", // Configurable; not invented
   flagshipSellerId: "seller_wizz_pk_1p",
   flagshipSellerName: "WIZZ.PK Direct",
+  flagshipSellerSlug: "wizz-pk-direct",
   sessionCookieName: process.env.SESSION_COOKIE_NAME || "wizz_session",
   sessionExpiryDays: Number(process.env.SESSION_EXPIRY_DAYS || 7),
   reservationExpiryMinutes: 15,
@@ -25,3 +26,8 @@ export const SITE_CONFIG = {
     maxOrderLimitMinor: 5000000, // COD allowed up to PKR 50,000
   },
 } as const;
+
+/** WIZZ.PK's own first-party store; its listings are managed by platform staff and skip seller moderation. */
+export function isFirstPartySeller(org: { id: string; slug: string }): boolean {
+  return org.id === SITE_CONFIG.flagshipSellerId || org.slug === SITE_CONFIG.flagshipSellerSlug;
+}

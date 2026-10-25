@@ -64,7 +64,7 @@ export function MegaMenu({ categories }: MegaMenuProps) {
         ref={triggerRef}
         type="button"
         onClick={() => setIsOpen(true)}
-        className="flex items-center gap-2 py-2 px-3 rounded-lg text-slate-800 hover:text-emerald-700 hover:bg-slate-100 font-bold text-xs sm:text-sm transition-colors border border-slate-200/80 bg-slate-50 min-h-[44px]"
+        className="flex items-center gap-2 h-9 px-3 rounded-md text-slate-900 hover:text-emerald-700 hover:bg-slate-100 font-bold text-[13px] transition-colors flex-shrink-0"
         aria-label="Open All Departments Menu"
         aria-expanded={isOpen}
       >

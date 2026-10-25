@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
-import { ProductStatus } from "@prisma/client";
+import { Prisma, ProductStatus } from "@prisma/client";
+import { SITE_CONFIG } from "@/lib/config";
 
 export interface ProductFilterOptions {
   categorySlug?: string;
@@ -206,7 +207,7 @@ export async function getProducts(options: ProductFilterOptions = {}) {
   if (freeShippingOnly) {
     variantFilter.priceMinor = {
       ...((variantFilter.priceMinor as Record<string, number>) || {}),
-      gte: Math.max(500000, minPriceMinor || 0),
+      gte: Math.max(SITE_CONFIG.shipping.freeShippingThresholdMinor, minPriceMinor || 0),
     };
   }
 
@@ -233,20 +234,21 @@ export async function getProducts(options: ProductFilterOptions = {}) {
     };
   }
 
-  let orderBy: Record<string, "asc" | "desc"> = { createdAt: "desc" };
-  if (sort === "newest") {
-    orderBy = { createdAt: "desc" };
-  } else if (sort === "featured") {
-    orderBy = { featured: "desc" };
+  // Always end with unique keys so pages never repeat or skip products
+  let orderBy: Prisma.ProductOrderByWithRelationInput[] = [{ createdAt: "desc" }, { id: "asc" }];
+  if (sort === "featured") {
+    orderBy = [{ featured: "desc" }, { createdAt: "desc" }, { id: "asc" }];
   }
 
   const skip = Math.max(0, (page - 1) * limit);
+  // These sorts are computed in memory, so they must see every match before paging
+  const sortsInMemory = sort === "price_asc" || sort === "price_desc" || sort === "rating";
 
   const [rawProducts, total] = await Promise.all([
     prisma.product.findMany({
       where: whereClause,
-      skip: sort === "price_asc" || sort === "price_desc" ? undefined : skip,
-      take: sort === "price_asc" || sort === "price_desc" ? undefined : limit,
+      skip: sortsInMemory ? undefined : skip,
+      take: sortsInMemory ? undefined : limit,
       orderBy,
       include: {
         category: true,

@@ -18,7 +18,7 @@ export async function register() {
   const tick = async () => {
     try {
       const r = await runMaintenance();
-      if (r.reservationsReleased || r.ordersCancelled || r.jobsProcessed || r.jobErrors) {
+      if (r.reservationsReleased || r.ordersCancelled || r.jobsProcessed || r.jobErrors || r.dealPricesUpdated) {
         console.log(`[scheduler] ${JSON.stringify(r)}`);
       }
     } catch (err) {

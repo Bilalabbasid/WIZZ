@@ -116,7 +116,7 @@ export default async function SellerPortalLayout({
         </div>
 
         {/* Horizontal Navigation Bar */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 border-t border-slate-100 overflow-x-auto scrollbar-none">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 border-t border-slate-100 overflow-x-auto no-scrollbar">
           <nav className="flex space-x-1 py-2">
             {navItems.map((item) => {
               const Icon = item.icon;

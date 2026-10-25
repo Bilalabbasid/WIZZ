@@ -2,18 +2,20 @@ import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { SITE_CONFIG } from "@/lib/config";
+import { formatCurrency } from "@/lib/formatters";
+import { getCategories } from "@/modules/catalog/services";
 import {
   ShoppingBag,
   User as UserIcon,
   ShieldCheck,
   Store,
   Truck,
-  Heart,
   Package,
   Headphones,
   Zap,
+  Banknote,
 } from "lucide-react";
-import { cookies } from "next/headers";
+import { getCartToken } from "@/lib/cart-session";
 import { MobileNav } from "./mobile-nav";
 import { MarketplaceSearch } from "./marketplace-search";
 import { DeliveryLocationSelector } from "./delivery-location-modal";
@@ -22,8 +24,8 @@ import { WizzLogo } from "./wizz-logo";
 
 export async function Navbar() {
   const user = await getCurrentUser();
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get(SITE_CONFIG.sessionCookieName)?.value;
+  // Guest carts are keyed by the cart cookie, not the auth session cookie
+  const sessionToken = await getCartToken();
 
   // Compute cart item count
   let cartItemCount = 0;
@@ -41,15 +43,8 @@ export async function Navbar() {
     cartItemCount = cart?.items.reduce((sum, item) => sum + item.quantity, 0) || 0;
   }
 
-  // Fetch active categories with product count for MegaMenu & navigation
-  const allCategories = await prisma.category.findMany({
-    where: { isActive: true },
-    take: 15,
-    orderBy: { displayOrder: "asc" },
-    include: {
-      _count: { select: { products: true } },
-    },
-  });
+  // Active categories; counts include only publicly listed products
+  const allCategories = (await getCategories()).slice(0, 15);
 
   const searchCategories = allCategories.map((c) => ({
     id: c.id,
@@ -73,203 +68,171 @@ export async function Navbar() {
     }
   }
 
+  const freeDeliveryLabel = formatCurrency(SITE_CONFIG.shipping.freeShippingThresholdMinor);
+  const accountHref = user ? "/account" : "/login";
+
   return (
-    <header className="sticky top-0 z-50 bg-white border-b border-slate-200 shadow-xs">
-      {/* 1. Top Utility Strip (Marketplace Style: Shipping, Location, Seller Link, Care) */}
-      <div className="bg-slate-950 text-white text-[11px] font-medium py-1.5 px-4 tracking-wide border-b border-slate-800">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          {/* Left: Nationwide Guarantee & Location */}
-          <div className="flex items-center gap-3">
-            <span className="flex items-center gap-1.5 text-emerald-400 font-semibold">
-              <Truck size={13} />
-              <span>Free Nationwide Delivery over PKR 5,000</span>
+    <header className="sticky top-0 z-50 shadow-sm">
+      {/* Tier 1: utility strip */}
+      <div className="hidden sm:block bg-brand-ink-deep text-emerald-50/80 text-[11px] font-medium">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-8 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-5">
+            <span className="flex items-center gap-1.5">
+              <Truck size={13} className="text-emerald-300" />
+              <span>Free delivery on orders over {freeDeliveryLabel}</span>
             </span>
-            <span className="hidden md:inline text-slate-700">•</span>
-            <span className="hidden md:inline text-slate-300">Cash on Delivery (COD) Verified</span>
+            <span className="hidden md:flex items-center gap-1.5">
+              <Banknote size={13} className="text-emerald-300" />
+              <span>Cash on delivery across Pakistan</span>
+            </span>
           </div>
 
-          {/* Right: Merchant link, Help desk, Admin portal */}
-          <div className="flex items-center gap-4 text-slate-300">
+          <nav aria-label="Utility" className="flex items-center gap-5">
             {sellerWorkspaceLink ? (
               <Link
                 href={sellerWorkspaceLink}
-                className="text-emerald-400 hover:text-emerald-300 font-semibold flex items-center gap-1"
+                className="flex items-center gap-1 text-emerald-300 hover:text-white font-semibold transition-colors"
               >
                 <Store size={12} />
                 <span>Seller Center</span>
               </Link>
             ) : (
-              <Link
-                href="/sell"
-                className="hover:text-emerald-400 transition-colors font-semibold flex items-center gap-1"
-              >
+              <Link href="/sell" className="flex items-center gap-1 hover:text-white transition-colors">
                 <Store size={12} />
-                <span>Become a Seller</span>
+                <span>Sell on WIZZ.PK</span>
               </Link>
             )}
-
-            <span className="text-slate-700">•</span>
-            <Link href="/contact" className="hover:text-white transition-colors flex items-center gap-1">
+            <Link href="/contact" className="flex items-center gap-1 hover:text-white transition-colors">
               <Headphones size={12} />
-              <span>Customer Care</span>
+              <span>Help &amp; support</span>
             </Link>
-
             {isPlatformAdmin && (
-              <>
-                <span className="text-slate-700">•</span>
-                <Link
-                  href="/admin"
-                  className="text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1"
-                >
-                  <ShieldCheck size={12} />
-                  <span>Admin</span>
-                </Link>
-              </>
+              <Link
+                href="/admin"
+                className="flex items-center gap-1 text-amber-300 hover:text-amber-200 font-semibold transition-colors"
+              >
+                <ShieldCheck size={12} />
+                <span>Admin</span>
+              </Link>
             )}
-          </div>
+          </nav>
         </div>
       </div>
 
-      {/* 2. Main Marketplace Header Row */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 sm:py-3">
-        <div className="flex items-center justify-between gap-3 sm:gap-6">
-          {/* Left: Mobile Nav & Brand Logo */}
-          <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
-            <div className="lg:hidden">
-              <MobileNav
-                categories={allCategories.slice(0, 6)}
-                user={user ? { id: user.id, firstName: user.firstName, role: user.role } : null}
-                sellerWorkspaceLink={sellerWorkspaceLink}
-                isPlatformAdmin={Boolean(isPlatformAdmin)}
-              />
+      {/* Tier 2: brand bar with search */}
+      <div className="bg-brand-ink text-white">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-2 sm:py-2.5">
+          <div className="flex items-center gap-2 sm:gap-4 lg:gap-5">
+            <div className="flex items-center gap-1 sm:gap-3 flex-shrink-0">
+              <div className="lg:hidden">
+                <MobileNav
+                  categories={allCategories.slice(0, 6)}
+                  user={user ? { id: user.id, firstName: user.firstName, role: user.role } : null}
+                  sellerWorkspaceLink={sellerWorkspaceLink}
+                  isPlatformAdmin={Boolean(isPlatformAdmin)}
+                  tone="dark"
+                />
+              </div>
+              <WizzLogo size="md" theme="light" />
+              <div className="hidden lg:block">
+                <DeliveryLocationSelector tone="dark" />
+              </div>
             </div>
 
-            <WizzLogo size="md" />
+            <div className="hidden sm:flex flex-1 min-w-0">
+              <MarketplaceSearch categories={searchCategories} />
+            </div>
 
-            {/* Delivery Location Selector (Desktop) */}
-            <div className="hidden lg:block border-l border-slate-200 pl-3 ml-2">
-              <DeliveryLocationSelector />
+            <div className="flex items-center gap-0.5 sm:gap-1 ml-auto sm:ml-0 flex-shrink-0">
+              <Link
+                href={accountHref}
+                className="flex items-center gap-2 px-2 rounded-lg hover:bg-white/10 transition-colors min-h-[44px] min-w-[44px] justify-center"
+                aria-label={user ? "Your account" : "Sign in or create an account"}
+              >
+                <UserIcon size={22} strokeWidth={1.75} className="md:hidden" />
+                <span className="hidden md:block leading-tight text-left">
+                  <span className="block text-[11px] text-emerald-100/75 font-medium">
+                    {user ? `Hello, ${user.firstName}` : "Hello, sign in"}
+                  </span>
+                  <span className="block text-[13px] font-bold">{user ? "Your account" : "Account & join"}</span>
+                </span>
+              </Link>
+
+              <Link
+                href={accountHref}
+                className="hidden lg:flex flex-col justify-center px-2 rounded-lg hover:bg-white/10 transition-colors min-h-[44px] leading-tight"
+              >
+                <span className="block text-[11px] text-emerald-100/75 font-medium">Returns</span>
+                <span className="block text-[13px] font-bold">&amp; Orders</span>
+              </Link>
+
+              <Link
+                href="/cart"
+                aria-label={`Cart, ${cartItemCount} item${cartItemCount === 1 ? "" : "s"}`}
+                className="flex items-center gap-1.5 px-2 rounded-lg hover:bg-white/10 transition-colors min-h-[44px] min-w-[44px] justify-center"
+              >
+                <span className="relative">
+                  <ShoppingBag size={24} strokeWidth={1.75} />
+                  <span
+                    aria-live="polite"
+                    aria-atomic="true"
+                    className={`absolute -top-1.5 -right-2 min-w-[18px] h-[18px] px-1 rounded-full bg-orange-500 text-white text-[10px] font-extrabold flex items-center justify-center ring-2 ring-brand-ink tabular-nums ${
+                      cartItemCount > 0 ? "" : "sr-only"
+                    }`}
+                  >
+                    {cartItemCount > 99 ? "99+" : cartItemCount}
+                  </span>
+                </span>
+                <span className="hidden sm:block text-[13px] font-bold">Cart</span>
+              </Link>
             </div>
           </div>
 
-          {/* Center: Prominent Marketplace Search Bar (Desktop/Tablet) */}
-          <div className="hidden sm:flex flex-1 max-w-2xl mx-auto">
+          {/* Mobile search row */}
+          <div className="sm:hidden mt-2">
             <MarketplaceSearch categories={searchCategories} />
           </div>
-
-          {/* Right Action Icons & Badges */}
-          <div className="flex items-center gap-1.5 sm:gap-4 flex-shrink-0">
-            {/* User Account / Sign In */}
-            {user ? (
-              <Link
-                href="/account"
-                className="flex items-center gap-2 py-1 px-2.5 rounded-xl hover:bg-slate-100 transition-colors text-left min-h-[44px]"
-              >
-                <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-700">
-                  <UserIcon size={16} />
-                </div>
-                <div className="hidden md:block leading-tight">
-                  <span className="block text-[10px] text-slate-500 font-medium">Hello, {user.firstName}</span>
-                  <span className="block text-xs font-bold text-slate-900">Account & Lists</span>
-                </div>
-              </Link>
-            ) : (
-              <Link
-                href="/login"
-                className="flex items-center gap-2 py-1 px-2.5 rounded-xl hover:bg-slate-100 transition-colors text-left min-h-[44px]"
-              >
-                <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-700">
-                  <UserIcon size={16} />
-                </div>
-                <div className="hidden md:block leading-tight">
-                  <span className="block text-[10px] text-slate-500 font-medium">Welcome</span>
-                  <span className="block text-xs font-bold text-emerald-700">Sign In / Join</span>
-                </div>
-              </Link>
-            )}
-
-            {/* Returns & Orders (Amazon / Daraz style) */}
-            <Link
-              href={user ? "/account" : "/login"}
-              className="hidden lg:flex flex-col justify-center py-1 px-2.5 rounded-xl hover:bg-slate-100 transition-colors text-left min-h-[44px]"
-              title="Track and manage orders"
-            >
-              <span className="block text-[10px] text-slate-500 font-medium">Returns</span>
-              <span className="block text-xs font-bold text-slate-900">& Orders</span>
-            </Link>
-
-            {/* Shopping Cart Button */}
-            <Link
-              href="/cart"
-              aria-label="Shopping Cart"
-              className="flex items-center gap-2 py-1 px-2.5 sm:px-3 rounded-xl bg-slate-50 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-200 transition-colors group min-h-[44px]"
-            >
-              <div className="relative">
-                <ShoppingBag size={20} className="text-slate-800 group-hover:text-emerald-700 transition-colors" />
-                <span
-                  aria-live="polite"
-                  aria-atomic="true"
-                  className={`absolute -top-2 -right-2 bg-emerald-600 text-white font-extrabold text-[10px] w-4.5 h-4.5 rounded-full flex items-center justify-center shadow-xs transition-transform ${
-                    cartItemCount > 0 ? "scale-100" : "scale-0"
-                  }`}
-                >
-                  {cartItemCount > 99 ? "99+" : cartItemCount}
-                </span>
-              </div>
-              <div className="hidden sm:block text-left leading-none">
-                <span className="block text-[10px] text-slate-400 font-semibold uppercase">Cart</span>
-                <span className="block text-xs font-bold text-slate-900 group-hover:text-emerald-700 mt-0.5">
-                  {cartItemCount > 0 ? `${cartItemCount} item${cartItemCount === 1 ? "" : "s"}` : "PKR 0"}
-                </span>
-              </div>
-            </Link>
-          </div>
-        </div>
-
-        {/* Mobile Search Row (Immediately Accessible on screens < 640px) */}
-        <div className="sm:hidden mt-2 pt-2 border-t border-slate-100">
-          <MarketplaceSearch categories={searchCategories} />
         </div>
       </div>
 
-      {/* 3. Sub-Navigation Bar: Mega-Menu & Key Departments */}
-      <div className="bg-slate-50 border-t border-slate-200/80 px-4 sm:px-6 lg:px-8 py-1.5 hidden md:block">
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
-          {/* Left: Mega Menu + Department Links */}
-          <div className="flex items-center gap-3 overflow-x-auto py-0.5 text-xs font-semibold text-slate-700">
-            <MegaMenu categories={allCategories} />
-
+      {/* Tier 3: department bar */}
+      <div className="hidden md:block bg-white border-b border-slate-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center gap-1 h-11">
+          <MegaMenu categories={allCategories} />
+          <nav
+            aria-label="Departments"
+            className="flex items-center gap-0.5 overflow-x-auto no-scrollbar text-[13px] font-semibold text-slate-700 min-w-0"
+          >
             <Link
-              href="/products?sort=featured"
-              className="flex items-center gap-1.5 text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100/80 py-1.5 px-3 rounded-lg font-bold transition-colors whitespace-nowrap"
+              href="/products?deals=true"
+              className="flex items-center gap-1.5 text-rose-600 hover:bg-rose-50 h-9 px-3 rounded-md transition-colors whitespace-nowrap"
             >
-              <Zap size={13} className="text-emerald-600" />
-              <span>Flash Deals</span>
+              <Zap size={14} className="fill-rose-600" />
+              <span>Deals</span>
             </Link>
-
             <Link
-              href="/products"
-              className="hover:text-emerald-600 hover:bg-slate-200/50 py-1.5 px-2.5 rounded-lg transition-colors whitespace-nowrap"
+              href="/products?sort=newest"
+              className="flex items-center hover:text-emerald-700 hover:bg-slate-100 h-9 px-3 rounded-md transition-colors whitespace-nowrap"
             >
-              All Products
+              New arrivals
             </Link>
-
             {allCategories.slice(0, 6).map((c) => (
               <Link
                 key={c.id}
                 href={`/categories/${c.slug}`}
-                className="hover:text-emerald-600 hover:bg-slate-200/50 py-1.5 px-2.5 rounded-lg transition-colors whitespace-nowrap"
+                className="flex items-center hover:text-emerald-700 hover:bg-slate-100 h-9 px-3 rounded-md transition-colors whitespace-nowrap"
               >
                 {c.name}
               </Link>
             ))}
-          </div>
-
-          {/* Right: Quick Delivery Note */}
-          <div className="hidden xl:flex items-center gap-2 text-[11px] text-slate-500 font-medium whitespace-nowrap">
-            <ShieldCheck size={13} className="text-emerald-600" />
-            <span>100% Verified Specifications</span>
-          </div>
+          </nav>
+          <Link
+            href={accountHref}
+            className="hidden xl:flex items-center gap-1.5 ml-auto pl-4 text-xs font-semibold text-slate-600 hover:text-emerald-700 whitespace-nowrap"
+          >
+            <Package size={14} className="text-emerald-600" />
+            <span>Track your order</span>
+          </Link>
         </div>
       </div>
     </header>

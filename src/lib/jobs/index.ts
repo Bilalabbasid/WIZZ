@@ -3,6 +3,7 @@ import { JobStatus } from "@prisma/client";
 import { cleanupExpiredReservations } from "@/modules/inventory/services";
 import { cancelExpiredUnpaidOrders } from "@/modules/payments/services";
 import { buildOrderEmail, sendEmail } from "../email";
+import { syncDealPricing } from "@/modules/sellers/deal-pricing";
 
 export type JobType =
   | "CLEANUP_EXPIRED_RESERVATIONS"
@@ -130,20 +131,23 @@ export async function runMaintenance(): Promise<{
   ordersCancelled: number;
   jobsProcessed: number;
   jobErrors: number;
+  dealPricesUpdated: number;
 }> {
   if (maintenanceRunning) {
-    return { reservationsReleased: 0, ordersCancelled: 0, jobsProcessed: 0, jobErrors: 0 };
+    return { reservationsReleased: 0, ordersCancelled: 0, jobsProcessed: 0, jobErrors: 0, dealPricesUpdated: 0 };
   }
   maintenanceRunning = true;
   try {
     const { cleanedCount } = await cleanupExpiredReservations();
     const { cancelled } = await cancelExpiredUnpaidOrders();
     const jobs = await processPendingJobs(25);
+    const deals = await syncDealPricing();
     return {
       reservationsReleased: cleanedCount,
       ordersCancelled: cancelled,
       jobsProcessed: jobs.processed,
       jobErrors: jobs.errors,
+      dealPricesUpdated: deals.updated,
     };
   } finally {
     maintenanceRunning = false;

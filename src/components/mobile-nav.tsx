@@ -20,6 +20,7 @@ interface MobileNavProps {
   } | null;
   sellerWorkspaceLink: string | null;
   isPlatformAdmin: boolean;
+  tone?: "light" | "dark";
 }
 
 export function MobileNav({
@@ -27,6 +28,7 @@ export function MobileNav({
   user,
   sellerWorkspaceLink,
   isPlatformAdmin,
+  tone = "light",
 }: MobileNavProps) {
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -69,7 +71,7 @@ export function MobileNav({
         aria-label="Open Navigation Menu"
         aria-expanded={isOpen}
         onClick={() => setIsOpen(true)}
-        className="w-11 h-11 flex items-center justify-center rounded-xl text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors focus-visible:ring-2 focus-visible:ring-emerald-500"
+        className={`w-11 h-11 flex items-center justify-center rounded-xl transition-colors focus-visible:ring-2 focus-visible:ring-emerald-400 ${tone === "dark" ? "text-white hover:bg-white/10" : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"}`}
       >
         <Menu size={22} />
       </button>

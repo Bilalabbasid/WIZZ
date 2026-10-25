@@ -8,7 +8,7 @@
     "start": "node .next/standalone/server.js",
     "lint": "eslint",
     "seed": "tsx prisma/seed.ts",
-    "test": "tsx tests/business-rules.test.ts && tsx tests/catalog-discovery-seo.test.ts && tsx tests/e2e-functional-audit.test.ts && tsx tests/security-audit-regression.test.ts"
+    "test": "tsx tests/business-rules.test.ts && tsx tests/catalog-discovery-seo.test.ts && tsx tests/e2e-functional-audit.test.ts && tsx tests/security-audit-regression.test.ts && tsx tests/seller-catalog-regression.test.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

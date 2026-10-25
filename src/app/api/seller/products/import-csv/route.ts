@@ -1,28 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
-import { getSellerContextForUser } from "@/modules/sellers/services";
 import { importSellerProductsCsv, CsvProductRow } from "@/modules/sellers/catalog-services";
+import { requireSellerContext, sellerErrorResponse } from "@/modules/sellers/api-guard";
 
 export async function POST(req: NextRequest) {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const context = await getSellerContextForUser(user.id);
-    if (!context?.sellerOrg) {
-      return NextResponse.json({ error: "No seller organization found for this user." }, { status: 404 });
-    }
+    const { user, sellerOrg } = await requireSellerContext({ catalogWrite: true });
 
     const { rows, dryRun = false } = await req.json();
-
     if (!rows || !Array.isArray(rows) || rows.length === 0) {
       return NextResponse.json({ error: "At least one CSV row is required." }, { status: 400 });
     }
+    if (rows.length > 2000) {
+      return NextResponse.json({ error: "Import at most 2,000 rows at a time." }, { status: 400 });
+    }
 
     const result = await importSellerProductsCsv(
-      context.sellerOrg.id,
+      sellerOrg.id,
       rows as CsvProductRow[],
       { dryRun: Boolean(dryRun) },
       user.id
@@ -34,8 +27,6 @@ export async function POST(req: NextRequest) {
       result,
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Error importing CSV";
-    const status = message.includes("FORBIDDEN") ? 403 : 400;
-    return NextResponse.json({ error: message }, { status });
+    return sellerErrorResponse(err, "Error importing CSV");
   }
 }

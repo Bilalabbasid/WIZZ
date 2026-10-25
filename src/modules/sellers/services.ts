@@ -174,8 +174,15 @@ export async function getSellerContextForUser(userId: string) {
     membership,
     sellerOrg,
     application,
-    status: isSuspended ? "SUSPENDED" : application?.status || "NO_APPLICATION",
-    canSell: isApproved && isActiveOrg,
+    // The organization's operational status is authoritative: invited team members and
+    // the first-party store have no KYC application of their own.
+    status: isSuspended
+      ? "SUSPENDED"
+      : isActiveOrg
+      ? SellerApplicationStatus.APPROVED
+      : application?.status || "NO_APPLICATION",
+    canSell: isActiveOrg,
+    isApplicantApproved: isApproved,
     suspensionReason: sellerOrg?.suspensionReason || null,
   };
 }

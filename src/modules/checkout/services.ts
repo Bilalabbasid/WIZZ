@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { syncDealPricing } from "@/modules/sellers/deal-pricing";
 import { prisma } from "@/lib/db";
 import { SITE_CONFIG } from "@/lib/config";
 import {
@@ -131,6 +132,11 @@ export async function calculateCheckoutTotals(
   couponCode?: string,
   shippingTier: "STANDARD" | "EXPRESS" = "STANDARD"
 ): Promise<CalculationResult> {
+  // Apply any deal that started or ended since the last scheduler tick, so the
+  // price charged always matches the deal window.
+  const cartVariants = await prisma.cartItem.findMany({ where: { cartId }, select: { variantId: true } });
+  await syncDealPricing({ variantIds: cartVariants.map((ci) => ci.variantId) });
+
   const cart = await prisma.cart.findUnique({
     where: { id: cartId },
     include: {

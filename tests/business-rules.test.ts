@@ -90,6 +90,14 @@ import { SITE_CONFIG } from "../src/lib/config";
 import { UserRole, SellerApplicationStatus, InventoryAdjustmentReason, ProductModerationStatus } from "@prisma/client";
 
 
+// Listings need at least one image before they can be submitted for review
+const TEST_IMAGES = [
+  {
+    url: "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=1000&q=80",
+    isThumbnail: true,
+  },
+];
+
 async function runTestSuite() {
   console.log("=========================================================");
   console.log("🚀 STARTING WIZZ.PK FULL-STACK BUSINESS RULES TEST SUITE");
@@ -611,6 +619,7 @@ async function runTestSuite() {
         description: "Heavy duty cordura rucksack",
         categoryId: testCategory.id,
         status: "PUBLISHED",
+        images: TEST_IMAGES,
         variants: [
           {
             title: "Black",
@@ -720,8 +729,18 @@ async function runTestSuite() {
     // Approved seller can now update draft product to PUBLISHED
     const publishedProduct = await updateSellerProduct(alphaOrgId, draftProduct.id, {
       status: "PUBLISHED",
+      images: TEST_IMAGES,
     }, alphaUserId);
-    assert(publishedProduct.status === "PUBLISHED", "Approved seller successfully published product to live catalog");
+    assert(
+      publishedProduct.moderationStatus === "PENDING_REVIEW" && publishedProduct.status === "DRAFT" && !publishedProduct.isApprovedByPlatform,
+      "Approved seller's publish request goes to platform review instead of straight to the live catalog"
+    );
+    await approveProductModeration(publishedProduct.id, adminUser!.id);
+    const approvedAlphaListing = await prisma.product.findUnique({ where: { id: publishedProduct.id } });
+    assert(
+      approvedAlphaListing?.status === "PUBLISHED" && approvedAlphaListing.isApprovedByPlatform === true,
+      "Platform approval publishes the seller listing"
+    );
 
     // Admin Suspends seller
     await suspendSellerOrg(alphaOrgId, adminUser!.id, "Temporary compliance review");
@@ -764,6 +783,7 @@ async function runTestSuite() {
       description: "Speed plate athletic footwear",
       categoryId: testCategory.id,
       status: "PUBLISHED",
+      images: TEST_IMAGES,
       variants: [
         {
           title: "Size 42",
@@ -773,6 +793,7 @@ async function runTestSuite() {
         },
       ],
     }, betaUserId);
+    await approveProductModeration(productBeta.id, adminUser!.id);
 
     const variantAlpha = await prisma.productVariant.findFirst({ where: { productId: publishedProduct.id } });
     const variantBeta = await prisma.productVariant.findFirst({ where: { productId: productBeta.id } });
@@ -1143,6 +1164,7 @@ async function runTestSuite() {
       description: "Full grain vegetable tanned leather field wallet with brass hardware.",
       categoryId: testCategory.id,
       status: "PUBLISHED",
+      images: TEST_IMAGES,
       variants: [
         {
           title: "Whiskey Tan",
@@ -1152,8 +1174,11 @@ async function runTestSuite() {
         },
       ],
     }, alphaUserId);
-    assert(liveProduct.status === "PUBLISHED" && liveProduct.isApprovedByPlatform === true, "Product is live and approved on public catalog");
-    assert(liveProduct.moderationStatus === "APPROVED", "Product moderation status is APPROVED");
+    assert(liveProduct.moderationStatus === "PENDING_REVIEW", "New external listing waits for platform review");
+    await approveProductModeration(liveProduct.id, adminUser!.id);
+    const liveProductApproved = (await prisma.product.findUnique({ where: { id: liveProduct.id } }))!;
+    assert(liveProductApproved.status === "PUBLISHED" && liveProductApproved.isApprovedByPlatform === true, "Product is live and approved on public catalog");
+    assert(liveProductApproved.moderationStatus === "APPROVED", "Product moderation status is APPROVED");
 
     // 2. Seller modifies live published product:
     // SERVER RULE: Must NOT accidentally overwrite public approved listing!
@@ -1281,6 +1306,7 @@ async function runTestSuite() {
       description: "Seller Alpha test product",
       categoryId: testCat.id,
       status: "PUBLISHED",
+      images: TEST_IMAGES,
       variants: [
         {
           title: "Default",
@@ -1297,6 +1323,7 @@ async function runTestSuite() {
       description: "Seller Beta test product",
       categoryId: testCat.id,
       status: "PUBLISHED",
+      images: TEST_IMAGES,
       variants: [
         {
           title: "Default",
@@ -1669,6 +1696,7 @@ async function runTestSuite() {
       description: "Product with exactly 1 unit to test concurrency locking",
       categoryId: testCat.id,
       status: "PUBLISHED",
+      images: TEST_IMAGES,
       variants: [
         {
           title: "Last Unit Variant",
