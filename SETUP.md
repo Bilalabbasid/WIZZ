@@ -62,6 +62,8 @@ CRON_SECRET="wizz-cron-secure-token-992211"
 
 ---
 
+> Deploying? See `CLOUDWAYS_DEPLOYMENT.md` (Cloudways Velocity) or `HOSTINGER_DEPLOYMENT.md`. In production use `npm run deploy:build` and `npm start`; the demo seeds below refuse to run with `NODE_ENV=production`.
+
 ## 3. Database Initialization & Seeding
 
 1. **Install dependencies**:

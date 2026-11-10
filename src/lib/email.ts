@@ -5,8 +5,13 @@ import { prisma } from "./db";
 import { formatCurrency } from "./formatters";
 import { orderPath } from "./order-access";
 
+// Both naming styles are accepted: SMTP_PASSWORD/SMTP_FROM (documented in .env.example)
+// and the older SMTP_PASS/EMAIL_FROM.
+const smtpPassword = () => process.env.SMTP_PASSWORD || process.env.SMTP_PASS || "";
+const emailFrom = () => process.env.SMTP_FROM || process.env.EMAIL_FROM || "";
+
 export function isEmailConfigured(): boolean {
-  return Boolean(process.env.SMTP_HOST && process.env.EMAIL_FROM);
+  return Boolean(process.env.SMTP_HOST && emailFrom());
 }
 
 let transporter: Transporter | null = null;
@@ -18,7 +23,7 @@ function getTransporter(): Transporter {
       host: process.env.SMTP_HOST,
       port,
       secure: process.env.SMTP_SECURE ? process.env.SMTP_SECURE === "true" : port === 465,
-      auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS || "" } : undefined,
+      auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: smtpPassword() } : undefined,
       connectionTimeout: 10000,
       greetingTimeout: 10000,
       socketTimeout: 20000,
@@ -51,14 +56,14 @@ export interface OutgoingEmail {
 export async function sendEmail(message: OutgoingEmail): Promise<void> {
   if (!isEmailConfigured()) {
     if (process.env.NODE_ENV === "production") {
-      throw new Error("EMAIL_NOT_CONFIGURED: Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS and EMAIL_FROM.");
+      throw new Error("EMAIL_NOT_CONFIGURED: Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD and SMTP_FROM.");
     }
     console.log(`[email:dev] to=${message.to} subject="${message.subject}"`);
     return;
   }
 
   await getTransporter().sendMail({
-    from: process.env.EMAIL_FROM,
+    from: emailFrom(),
     to: message.to,
     subject: message.subject,
     text: message.text,

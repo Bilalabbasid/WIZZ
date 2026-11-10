@@ -5,10 +5,14 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build && node scripts/copy-standalone-assets.js",
-    "start": "node .next/standalone/server.js",
+    "start": "node scripts/start-server.js",
     "lint": "eslint",
     "seed": "tsx prisma/seed.ts",
-    "test": "tsx tests/business-rules.test.ts && tsx tests/catalog-discovery-seo.test.ts && tsx tests/e2e-functional-audit.test.ts && tsx tests/security-audit-regression.test.ts && tsx tests/seller-catalog-regression.test.ts"
+    "test": "tsx tests/business-rules.test.ts && tsx tests/catalog-discovery-seo.test.ts && tsx tests/e2e-functional-audit.test.ts && tsx tests/security-audit-regression.test.ts && tsx tests/seller-catalog-regression.test.ts",
+    "deploy:build": "node scripts/check-deploy-env.js && prisma generate && prisma db push --skip-generate && tsx scripts/bootstrap-production.ts && npm run build",
+    "bootstrap": "tsx scripts/bootstrap-production.ts",
+    "seed:catalog": "tsx scripts/seed-complete-diverse-catalog.ts",
+    "check:env": "node scripts/check-deploy-env.js"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -40,5 +44,8 @@
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
     "typescript": "^5"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

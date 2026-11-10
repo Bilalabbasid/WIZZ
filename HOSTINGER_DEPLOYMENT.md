@@ -16,7 +16,7 @@ WIZZ.PK is a full-stack, enterprise-grade Next.js e-commerce marketplace requiri
    - **Node.js Runtime**: Node.js 20.x LTS or 22.x LTS.
 2. **Hostinger Cloud / Business Web App**:
    - Uses Hostinger's Node.js Web App Manager.
-   - Set Startup File to `.next/standalone/server.js` or Run Command `npm start`.
+   - Set Startup File to `scripts/start-server.js` or Run Command `npm start` (the wrapper binds to `0.0.0.0` on `PORT`).
 
 ---
 

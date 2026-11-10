@@ -13,6 +13,14 @@ import bcrypt from "bcryptjs";
 const prisma = new PrismaClient();
 
 async function main() {
+  // Demo data with published test passwords (see SETUP.md): never on a live site by accident
+  if (process.env.NODE_ENV === "production" && process.env.ALLOW_DEMO_SEED !== "true") {
+    console.error(
+      "Refusing to run the demo seed with NODE_ENV=production: it creates accounts with publicly documented passwords. " +
+        "For production use `npm run bootstrap` (ADMIN_EMAIL/ADMIN_PASSWORD). Set ALLOW_DEMO_SEED=true only on staging."
+    );
+    process.exit(1);
+  }
   console.log("🌱 Starting WIZZ.PK database seeding...");
 
   // 1. Seed WIZZ.PK Flagship 1P Seller Organization

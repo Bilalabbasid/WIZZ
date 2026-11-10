@@ -1417,6 +1417,14 @@ function buildCatalog(): SeedProductDef[] {
 }
 
 async function main() {
+  // This script archives every published product that is not in the demo list
+  if (process.env.NODE_ENV === "production" && process.env.ALLOW_DEMO_SEED !== "true") {
+    console.error(
+      "Refusing to load the demo catalog with NODE_ENV=production: it archives published products not in the demo list. " +
+        "Set ALLOW_DEMO_SEED=true (or SEED_DEMO_CATALOG=true during deploy) only on staging or a store with no real products yet."
+    );
+    process.exit(1);
+  }
   const CATALOG = buildCatalog();
   const missingPhotos = CATALOG.filter((p) => p.images.length === 0).map((p) => p.title);
   if (missingPhotos.length > 0) {
