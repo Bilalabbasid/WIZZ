@@ -4,16 +4,16 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build && node scripts/copy-standalone-assets.js",
+    "build": "node scripts/build-production.js",
     "start": "node scripts/start-server.js",
     "lint": "eslint",
     "seed": "tsx prisma/seed.ts",
     "test": "tsx tests/business-rules.test.ts && tsx tests/catalog-discovery-seo.test.ts && tsx tests/e2e-functional-audit.test.ts && tsx tests/security-audit-regression.test.ts && tsx tests/seller-catalog-regression.test.ts",
-    "deploy:build": "node scripts/check-deploy-env.js && prisma generate && prisma db push --skip-generate && tsx scripts/bootstrap-production.ts && node scripts/build-production.js",
+    "deploy:build": "node scripts/build-production.js --deploy",
     "bootstrap": "tsx scripts/bootstrap-production.ts",
     "seed:catalog": "tsx scripts/seed-complete-diverse-catalog.ts",
     "check:env": "node scripts/check-deploy-env.js",
-    "build:deploy-only": "node scripts/build-production.js"
+    "build:turbo": "next build && node scripts/copy-standalone-assets.js"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

@@ -14,7 +14,8 @@ WIZZ.PK is a full-stack, enterprise-grade Next.js e-commerce marketplace requiri
    - **Process Manager**: PM2 or Docker / systemd.
    - **Reverse Proxy**: Nginx or OpenLiteSpeed with SSL via Let's Encrypt / Certbot.
    - **Node.js Runtime**: Node.js 22.x LTS or newer (required).
-2. **Hostinger Cloud / Business Web App**:
+2. **Hostinger Cloud / Business / Unlimited Web App** (hPanel → Websites → Create site → Web App → Import Git Repository). The **Default** build and output settings work: Hostinger runs `npm run build`, which on the server (`NODE_ENV=production`) runs the env check, database update and bootstrap, then a webpack build with one worker (Turbopack crashes on these plans with "creating new process"), and `npm start`.
+   Original notes for this plan type:
    - Uses Hostinger's Node.js Web App Manager. These plans include MySQL only, so use an external PostgreSQL database (e.g. Neon or Supabase) and put its URL in `DATABASE_URL`. Build command: `npm ci --include=dev && npm run deploy:build`.
    - Set Startup File to `scripts/start-server.js` or Run Command `npm start` (the wrapper binds to `0.0.0.0` on `PORT`).
 
