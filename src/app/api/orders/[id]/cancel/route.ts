@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { clientErrorMessage, clientErrorStatus } from "@/lib/api-error";
 import { getCurrentUser } from "@/lib/auth";
 import { requestOrderCancellation } from "@/modules/orders/services";
 
@@ -18,7 +19,7 @@ export async function POST(
     await requestOrderCancellation(id, user.id, reason);
     return NextResponse.json({ success: true });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Error cancelling order";
-    return NextResponse.json({ error: message }, { status: 400 });
+    const message = clientErrorMessage(err, "Error cancelling order");
+    return NextResponse.json({ error: message }, { status: clientErrorStatus(err) });
   }
 }

@@ -1,9 +1,11 @@
+import { requireAdminPage } from "@/modules/admin/access";
 import { prisma } from "@/lib/db";
 import { formatDateTime } from "@/lib/formatters";
 import { Badge } from "@/components/ui/badge";
-import { History, ShieldCheck } from "lucide-react";
+import { History } from "lucide-react";
 
 export default async function AdminAuditLogsPage() {
+  await requireAdminPage("auditLogs", "/admin/audit-logs");
   const auditLogs = await prisma.auditEvent.findMany({
     take: 50,
     orderBy: { createdAt: "desc" },
@@ -15,7 +17,7 @@ export default async function AdminAuditLogsPage() {
   return (
     <div className="space-y-8">
       <div>
-        <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider">
+        <span className="text-xs font-bold text-brand-400 uppercase tracking-wider">
           Compliance & Security
         </span>
         <h1 className="text-3xl font-black tracking-tight text-white mt-1">
@@ -28,7 +30,7 @@ export default async function AdminAuditLogsPage() {
 
       <div className="bg-slate-800/80 rounded-3xl border border-slate-700/80 p-6 space-y-4">
         <div className="flex items-center gap-2 pb-3 border-b border-slate-700">
-          <History size={16} className="text-indigo-400" />
+          <History size={16} className="text-brand-400" />
           <h3 className="font-bold text-sm text-white">Latest Event Records ({auditLogs.length})</h3>
         </div>
 

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { clientErrorMessage } from "@/lib/api-error";
 import path from "path";
 import crypto from "crypto";
 import { getCurrentUser } from "@/lib/auth";
@@ -43,7 +44,9 @@ export async function GET(req: NextRequest) {
         const expiresAt = Number(exp);
         if (Date.now() <= expiresAt) {
           const expectedSig = crypto.createHmac("sha256", secret).update(`${key}:${expiresAt}`).digest("hex");
-          if (expectedSig === sig) {
+          const a = Buffer.from(expectedSig);
+          const b = Buffer.from(String(sig));
+          if (a.length === b.length && crypto.timingSafeEqual(a, b)) {
             isAuthorized = true;
           }
         }
@@ -106,7 +109,7 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Error streaming file";
+    const message = clientErrorMessage(err, "Error streaming file");
     return new NextResponse(message, { status: 500 });
   }
 }

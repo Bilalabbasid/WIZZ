@@ -1,60 +1,59 @@
+import type { Metadata } from "next";
 import { SITE_CONFIG } from "@/lib/config";
-import { Truck, ShieldCheck, Clock, MapPin } from "lucide-react";
+import { getCommerceSettings } from "@/lib/commerce-settings";
+import { formatCurrency } from "@/lib/formatters";
+import { PolicySection, PolicyShell } from "../_components/policy-shell";
 
-export default function ShippingPolicyPage() {
+export const metadata: Metadata = {
+  title: "Shipping policy",
+  description: "Delivery fees, cash on delivery and how orders ship on WIZZ.PK.",
+  alternates: { canonical: `${SITE_CONFIG.canonicalUrl}/policies/shipping` },
+};
+
+export default async function ShippingPolicyPage() {
+  const { freeShippingThresholdMinor, standardShippingMinor, expressShippingMinor, codMaxOrderMinor } =
+    await getCommerceSettings();
+
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-8">
-      <div>
-        <span className="text-xs font-bold text-indigo-600 tracking-wider uppercase">
-          Policy & Delivery Standards
-        </span>
-        <h1 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight mt-1">
-          Shipping & Fulfillment Policy
-        </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Last updated: October 2026 • Verified physical product logistics
+    <PolicyShell
+      current="/policies/shipping"
+      eyebrow="Shipping policy"
+      title="Delivery across Pakistan."
+      muted="Pay cash when it arrives."
+      intro={<p>Fees are calculated at checkout from the rates below. You see the total before you place the order.</p>}
+    >
+      <PolicySection number={1} title="Delivery fees">
+        <p>Each seller ships its own package, so fees apply per seller in your order.</p>
+        <ul>
+          <li>
+            <strong>Standard delivery:</strong> {formatCurrency(standardShippingMinor)} per seller package. Free when
+            your items from that seller total {formatCurrency(freeShippingThresholdMinor)} or more.
+          </li>
+          <li>
+            <strong>Express delivery:</strong> {formatCurrency(expressShippingMinor)} per seller package, where offered
+            at checkout.
+          </li>
+        </ul>
+      </PolicySection>
+
+      <PolicySection number={2} title="Cash on delivery">
+        <p>
+          Pay the courier in cash when your package arrives. Cash on delivery is available for orders up to{" "}
+          {formatCurrency(codMaxOrderMinor)}.
         </p>
-      </div>
+      </PolicySection>
 
-      <div className="bg-white rounded-3xl border border-slate-200/90 p-8 space-y-8 text-slate-700 text-sm leading-relaxed">
-        <section className="space-y-3">
-          <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-            <Truck size={20} className="text-indigo-600" />
-            <span>1. Shipping Rates & Delivery Estimates</span>
-          </h2>
-          <p>
-            WIZZ.PK ships verified physical products from our central fulfillment hubs and authorized merchant warehouses. Shipping charges are calculated dynamically based on package weight, tier, and destination:
-          </p>
-          <ul className="list-disc pl-5 space-y-1.5 text-xs text-slate-600">
-            <li><strong>Standard Tracked Shipping</strong>: PKR 250 flat rate. Complimentary on orders over PKR 3,000. Typical transit time is 2 to 4 business days across Pakistan.</li>
-            <li><strong>Express Priority Courier</strong>: PKR 450 flat rate. Priority dispatch via TCS / Leopards Express with 1 to 2 business day delivery to major cities.</li>
-          </ul>
-        </section>
+      <PolicySection number={3} title="How your order ships">
+        <p>
+          The seller packs your items and hands them to a courier. When a package ships, its courier and tracking number
+          are added to your order, so you can follow it from your account.
+        </p>
+        <p>Delivery times depend on the seller, the courier and your city.</p>
+      </PolicySection>
 
-        <section className="space-y-3">
-          <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-            <ShieldCheck size={20} className="text-indigo-600" />
-            <span>2. Real-Time Tracking & Proof of Delivery</span>
-          </h2>
-          <p>
-            Every order generates an authentic carrier waybill (TCS, Leopards Courier, Trax, or Pakistan Post). We never fabricate placeholder delivery statuses. Once your package is scanned at the carrier sorting terminal, tracking checkpoints appear directly in your customer order dashboard.
-          </p>
-        </section>
-
-        <section className="space-y-3">
-          <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-            <Clock size={20} className="text-indigo-600" />
-            <span>3. Order Processing & Dispatch Timelines</span>
-          </h2>
-          <p>
-            Orders placed before 2:00 PM PKT on business days are processed and packed the same day. Orders received during Sundays or gazetted public holidays are dispatched the following business morning.
-          </p>
-        </section>
-
-        <div className="pt-4 border-t border-slate-100 text-xs text-slate-500">
-          <p>Questions regarding custom shipping regions or freight handling? Contact our operations desk at <strong>{SITE_CONFIG.supportEmail}</strong>.</p>
-        </div>
-      </div>
-    </div>
+      <PolicySection number={4} title="Cancelling an order">
+        <p>You can cancel an order from your order page until a package has shipped.</p>
+      </PolicySection>
+    </PolicyShell>
   );
 }

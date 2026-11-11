@@ -6,9 +6,23 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 
+interface TeamMember {
+  id: string;
+  role: string;
+  user: { email: string; firstName?: string | null; lastName?: string | null };
+}
+
+interface TeamInvitation {
+  id: string;
+  email: string;
+  role: string;
+  expiresAt: string;
+  inviteUrl: string;
+}
+
 export default function SellerTeamPage() {
-  const [members, setMembers] = useState<any[]>([]);
-  const [invitations, setInvitations] = useState<any[]>([]);
+  const [members, setMembers] = useState<TeamMember[]>([]);
+  const [invitations, setInvitations] = useState<TeamInvitation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Invite state
@@ -18,25 +32,24 @@ export default function SellerTeamPage() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadTeam();
-  }, []);
-
   const loadTeam = async () => {
     setIsLoading(true);
     try {
       const res = await fetch("/api/seller/team");
       const data = await res.json();
-      if (res.ok) {
-        setMembers(data.members || []);
-        setInvitations(data.invitations || []);
-      }
-    } catch {
-      // silent
+      if (!res.ok) throw new Error(data.error || "Could not load the team.");
+      setMembers(data.members || []);
+      setInvitations(data.invitations || []);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Could not load the team.");
     } finally {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    void Promise.resolve().then(loadTeam);
+  }, []);
 
   const handleInviteSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,13 +68,43 @@ export default function SellerTeamPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to invite team member");
 
-      setFeedback(`Invitation issued to ${inviteEmail}.`);
+      setFeedback(
+        `Invitation created for ${inviteEmail}. Copy the invite link below and send it to them; they must sign in with that email to join.`
+      );
       setInviteEmail("");
       loadTeam();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Error inviting member");
     } finally {
       setIsInviting(false);
+    }
+  };
+
+  const copyInviteLink = async (url: string) => {
+    const full = url.startsWith("http") ? url : `${window.location.origin}${url}`;
+    try {
+      await navigator.clipboard.writeText(full);
+      setFeedback("Invite link copied.");
+    } catch {
+      window.prompt("Copy this invite link:", full);
+    }
+  };
+
+  const handleRevokeInvite = async (invitationId: string) => {
+    if (!confirm("Revoke this invitation? The link will stop working.")) return;
+    setError(null);
+    try {
+      const res = await fetch("/api/seller/team", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invitationId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not revoke the invitation.");
+      setFeedback("Invitation revoked.");
+      loadTeam();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Could not revoke the invitation.");
     }
   };
 
@@ -111,7 +154,7 @@ export default function SellerTeamPage() {
       {/* Invite Box */}
       <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/90 shadow-sm space-y-4">
         <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
-          <UserPlus size={16} className="text-indigo-600" />
+          <UserPlus size={16} className="text-brand-600" />
           <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800">
             Invite Organization Collaborator
           </h2>
@@ -136,7 +179,7 @@ export default function SellerTeamPage() {
             <select
               value={inviteRole}
               onChange={(e) => setInviteRole(e.target.value)}
-              className="w-full text-xs rounded-xl border border-slate-300 p-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full text-xs rounded-xl border border-slate-300 p-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
             >
               <option value="ADMIN">ADMIN (Full Operations)</option>
               <option value="CATALOG_MANAGER">CATALOG MANAGER (Products & Media)</option>
@@ -150,7 +193,7 @@ export default function SellerTeamPage() {
             disabled={isInviting}
             className="w-full sm:w-auto"
           >
-            <span>Send Invite</span>
+            <span>Create Invite Link</span>
           </Button>
         </form>
       </div>
@@ -190,6 +233,7 @@ export default function SellerTeamPage() {
                   {m.role !== "OWNER" && (
                     <button
                       type="button"
+                      aria-label={`Remove ${m.user.email} from the team`}
                       onClick={() => handleRemoveMember(m.id)}
                       className="text-rose-600 hover:text-rose-800 p-1 rounded-md"
                     >
@@ -211,16 +255,24 @@ export default function SellerTeamPage() {
           </div>
           <div className="divide-y divide-slate-100">
             {invitations.map((inv) => (
-              <div key={inv.id} className="p-6 flex items-center justify-between text-xs">
+              <div key={inv.id} className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
                 <div>
                   <div className="font-bold text-slate-900">{inv.email}</div>
                   <span className="text-slate-400 text-[11px]">
                     Role: {inv.role} &bull; Expires: {new Date(inv.expiresAt).toLocaleDateString()}
                   </span>
                 </div>
-                <Badge variant="warning" size="sm">
-                  PENDING ACCEPTANCE
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <Badge variant="warning" size="sm">
+                    Pending
+                  </Badge>
+                  <Button size="sm" variant="outline" onClick={() => copyInviteLink(inv.inviteUrl)}>
+                    Copy link
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => handleRevokeInvite(inv.id)}>
+                    Revoke
+                  </Button>
+                </div>
               </div>
             ))}
           </div>

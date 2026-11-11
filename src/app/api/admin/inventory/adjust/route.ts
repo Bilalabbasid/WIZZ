@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { clientErrorMessage, clientErrorStatus } from "@/lib/api-error";
 import { requireRole } from "@/lib/auth";
 import { UserRole, InventoryAdjustmentReason } from "@prisma/client";
 import { adjustInventoryStock } from "@/modules/inventory/services";
@@ -30,7 +31,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, result });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Error adjusting inventory";
-    return NextResponse.json({ error: message }, { status: 400 });
+    const message = clientErrorMessage(err, "Error adjusting inventory");
+    return NextResponse.json({ error: message }, { status: clientErrorStatus(err) });
   }
 }

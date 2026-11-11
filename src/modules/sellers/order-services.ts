@@ -2,14 +2,12 @@ import { prisma } from "@/lib/db";
 import {
   SellerOrderStatus,
   ShipmentStatus,
-  ReturnStatus,
-  CustomerOrderStatus,
-  InventoryAdjustmentReason,
-  RefundStatus,
   SettlementStatus,
   SettlementEntryType,
 } from "@prisma/client";
-import { SITE_CONFIG } from "@/lib/config";
+import { cancelSellerSuborder } from "@/modules/orders/services";
+import { assertSellerTransition, markSellerOrderDelivered, recomputeCustomerOrderStatus } from "@/modules/orders/lifecycle";
+import { transitionReturnRequest } from "@/modules/returns/services";
 
 /**
  * Lists seller-specific orders strictly belonging to a seller organization.
@@ -68,10 +66,24 @@ export async function getSellerOrderById(sellerOrgId: string, sellerOrderId: str
   const order = await prisma.sellerOrder.findUnique({
     where: { id: sellerOrderId },
     include: {
-      customerOrder: true,
+      // Only this package's delivery details: no billing address, parent totals
+      // (which would reveal other sellers' amounts), coupon or customer account id.
+      customerOrder: {
+        select: {
+          id: true,
+          orderNumber: true,
+          customerEmail: true,
+          customerPhone: true,
+          shippingAddressJson: true,
+          status: true,
+          paymentStatus: true,
+          currency: true,
+          createdAt: true,
+        },
+      },
       items: {
         include: {
-          variant: { include: { product: true } },
+          variant: { include: { product: { select: { id: true, title: true, slug: true } } } },
         },
       },
       shipments: {
@@ -92,51 +104,44 @@ export async function getSellerOrderById(sellerOrgId: string, sellerOrderId: str
 }
 
 /**
- * Updates packing and fulfillment status of a seller order.
- * If order is marked DELIVERED and paid, transitions escrow holds to ELIGIBLE.
+ * Moves a seller package along its lifecycle (see modules/orders/lifecycle.ts):
+ * CONFIRMED <-> PACKING, DISPATCHED -> DELIVERED, or cancel before dispatch.
+ * DISPATCHED is set only by createSellerShipment.
  */
 export async function updateSellerOrderStatus(
   sellerOrgId: string,
   sellerOrderId: string,
   status: SellerOrderStatus,
-  actorUserId?: string
+  actorUserId?: string,
+  reason?: string
 ) {
+  if (!Object.values(SellerOrderStatus).includes(status)) {
+    throw new Error("VALIDATION: Unknown order status.");
+  }
   const order = await getSellerOrderById(sellerOrgId, sellerOrderId);
 
+  if (status === SellerOrderStatus.DISPATCHED) {
+    throw new Error("VALIDATION: Add the courier and tracking number to dispatch this package.");
+  }
+  assertSellerTransition(order.status, status);
+
+  if (status === SellerOrderStatus.CANCELLED) {
+    const cleanReason = String(reason || "").trim();
+    if (cleanReason.length < 3) throw new Error("VALIDATION: Tell the customer why this package is being cancelled.");
+    await cancelSellerSuborder(sellerOrderId, `Cancelled by seller: ${cleanReason.slice(0, 300)}`, actorUserId);
+    return prisma.sellerOrder.findUniqueOrThrow({ where: { id: sellerOrderId } });
+  }
+
   return prisma.$transaction(async (tx) => {
-    const updated = await tx.sellerOrder.update({
-      where: { id: sellerOrderId },
-      data: { status },
-    });
-
-    // When order is DELIVERED and paid, transition settlement escrow to ELIGIBLE
-    if (status === SellerOrderStatus.DELIVERED && order.customerOrder.paymentStatus === "PAID") {
-      const existingLedger = await tx.settlementLedger.findFirst({
-        where: { sellerOrderId, entryType: SettlementEntryType.ORDER_CREDIT },
+    if (status === SellerOrderStatus.DELIVERED) {
+      await markSellerOrderDelivered(tx, sellerOrderId, "Marked delivered by seller");
+    } else {
+      const flipped = await tx.sellerOrder.updateMany({
+        where: { id: sellerOrderId, status: order.status },
+        data: { status },
       });
-
-      if (existingLedger) {
-        await tx.settlementLedger.update({
-          where: { id: existingLedger.id },
-          data: {
-            status: SettlementStatus.ELIGIBLE,
-            eligibleAt: new Date(),
-          },
-        });
-      } else {
-        await tx.settlementLedger.create({
-          data: {
-            sellerOrgId,
-            sellerOrderId,
-            entryType: SettlementEntryType.ORDER_CREDIT,
-            amountMinor: order.netSellerPayableMinor,
-            balanceAfterMinor: order.netSellerPayableMinor,
-            status: SettlementStatus.ELIGIBLE,
-            eligibleAt: new Date(),
-            description: `Settlement credit for delivered package #${order.sellerOrderNumber}`,
-          },
-        });
-      }
+      if (flipped.count === 0) throw new Error("VALIDATION: This package was updated by someone else. Refresh and try again.");
+      await recomputeCustomerOrderStatus(tx, order.customerOrderId);
     }
 
     if (actorUserId) {
@@ -151,7 +156,7 @@ export async function updateSellerOrderStatus(
       });
     }
 
-    return updated;
+    return tx.sellerOrder.findUniqueOrThrow({ where: { id: sellerOrderId } });
   });
 }
 
@@ -169,44 +174,52 @@ export async function createSellerShipment(
   },
   actorUserId?: string
 ) {
-  await getSellerOrderById(sellerOrgId, sellerOrderId);
+  const carrierName = String(input.carrierName || "").trim();
+  const trackingNumber = String(input.trackingNumber || "").trim();
+  const trackingUrl = String(input.trackingUrl || "").trim();
+  if (carrierName.length < 2 || carrierName.length > 60) throw new Error("VALIDATION: Choose the courier.");
+  if (!/^[A-Za-z0-9-]{4,40}$/.test(trackingNumber)) {
+    throw new Error("VALIDATION: Enter the courier's tracking number (4-40 letters, digits or dashes).");
+  }
+  if (trackingUrl && !/^https:\/\/[^\s]+$/i.test(trackingUrl)) {
+    throw new Error("VALIDATION: The tracking link must start with https://");
+  }
+
+  const order = await getSellerOrderById(sellerOrgId, sellerOrderId);
+  assertSellerTransition(order.status, SellerOrderStatus.DISPATCHED);
 
   return prisma.$transaction(async (tx) => {
+    // Conditional flip: a double click cannot create two shipments
+    const flipped = await tx.sellerOrder.updateMany({
+      where: { id: sellerOrderId, status: { in: [SellerOrderStatus.CONFIRMED, SellerOrderStatus.PACKING] } },
+      data: { status: SellerOrderStatus.DISPATCHED },
+    });
+    if (flipped.count === 0) throw new Error("VALIDATION: This package has already been dispatched or cancelled.");
+
     const shipment = await tx.shipment.create({
       data: {
         sellerOrderId,
-        carrierName: input.carrierName,
-        trackingNumber: input.trackingNumber,
-        trackingUrl: input.trackingUrl || null,
-        status: ShipmentStatus.LABEL_CREATED,
+        carrierName,
+        trackingNumber,
+        trackingUrl: trackingUrl || null,
+        status: ShipmentStatus.IN_TRANSIT,
         shippedAt: new Date(),
         events: {
           create: {
-            status: ShipmentStatus.LABEL_CREATED,
-            note: `Waybill created for ${input.carrierName}. Tracking #: ${input.trackingNumber}`,
+            status: ShipmentStatus.IN_TRANSIT,
+            note: `Handed to ${carrierName}. Tracking number ${trackingNumber}.`,
           },
         },
       },
     });
 
-    // Update seller order
-    await tx.sellerOrder.update({
-      where: { id: sellerOrderId },
-      data: { status: SellerOrderStatus.DISPATCHED },
+    // The COD collection record follows the real courier and tracking number
+    await tx.codRemittanceRecord.updateMany({
+      where: { sellerOrderId },
+      data: { courierName: carrierName, trackingNumber },
     });
 
-    // Update customer order status
-    const so = await tx.sellerOrder.findUnique({
-      where: { id: sellerOrderId },
-      select: { customerOrderId: true },
-    });
-
-    if (so) {
-      await tx.customerOrder.update({
-        where: { id: so.customerOrderId },
-        data: { status: CustomerOrderStatus.SHIPPED },
-      });
-    }
+    await recomputeCustomerOrderStatus(tx, order.customerOrderId);
 
     if (actorUserId) {
       await tx.auditEvent.create({
@@ -215,7 +228,7 @@ export async function createSellerShipment(
           entityType: "Shipment",
           entityId: shipment.id,
           action: "CREATE_SHIPMENT",
-          detailsJson: JSON.stringify({ sellerOrderId, ...input }),
+          detailsJson: JSON.stringify({ sellerOrderId, carrierName, trackingNumber, trackingUrl: trackingUrl || null }),
         },
       });
     }
@@ -248,152 +261,18 @@ export async function getSellerReturns(sellerOrgId: string) {
 }
 
 /**
- * Resolves a return request: approves or rejects, executes restocking, and updates financial ledgers.
+ * Seller reviews a return (approve / reject) or confirms the goods came back (restock).
+ * Refunds are recorded by platform finance, not the seller.
  */
 export async function resolveSellerReturn(
   sellerOrgId: string,
   returnRequestId: string,
-  decision: "APPROVED" | "REJECTED",
+  decision: "APPROVED" | "REJECTED" | "RECEIVED",
   inspectionResult?: string,
   actorUserId?: string
 ) {
-  const returnReq = await prisma.returnRequest.findUnique({
-    where: { id: returnRequestId },
-    include: {
-      sellerOrder: true,
-      items: { include: { orderItem: true } },
-    },
-  });
-
-  if (!returnReq || returnReq.sellerOrder.sellerOrgId !== sellerOrgId) {
-    throw new Error("FORBIDDEN: Return request does not belong to your seller organization.");
-  }
-
-  const toStatus = decision === "APPROVED" ? ReturnStatus.APPROVED : ReturnStatus.REJECTED;
-
-  return prisma.$transaction(async (tx) => {
-    // 1. Update inspection notes
-    if (inspectionResult) {
-      for (const it of returnReq.items) {
-        await tx.returnItem.update({
-          where: { id: it.id },
-          data: { inspectionResult },
-        });
-      }
-    }
-
-    // 2. If approved, restock inventory, generate refund, and adjust seller payable & commission
-    if (decision === "APPROVED") {
-      let refundAmountMinor = 0;
-      let totalCommissionReversedMinor = 0;
-
-      for (const item of returnReq.items) {
-        const itemQuantity = item.quantity;
-        const totalPurchasedQty = item.orderItem.quantity || 1;
-        const discountShare = Math.round((item.orderItem.discountMinor * itemQuantity) / totalPurchasedQty);
-        const lineRefund = (item.orderItem.unitPriceMinor * itemQuantity) - discountShare;
-        refundAmountMinor += lineRefund;
-
-        const commissionReversal = Math.round((lineRefund * item.orderItem.commissionRatePercent) / 100);
-        totalCommissionReversedMinor += commissionReversal;
-
-        if (item.orderItem.variantId) {
-          await tx.inventoryLevel.update({
-            where: { variantId: item.orderItem.variantId },
-            data: { availableUnits: { increment: itemQuantity } },
-          });
-
-          await tx.inventoryAdjustment.create({
-            data: {
-              variantId: item.orderItem.variantId,
-              sellerOrgId,
-              actorUserId,
-              deltaUnits: itemQuantity,
-              balanceAfter: 0,
-              reasonCode: InventoryAdjustmentReason.RETURN_RESTOCK,
-              notes: `Merchant approved return #${returnRequestId}. ${inspectionResult || ""}`,
-            },
-          });
-        }
-      }
-
-      const totalSellerDebit = refundAmountMinor - totalCommissionReversedMinor;
-
-      // Customer Refund record
-      await tx.refund.create({
-        data: {
-          customerOrderId: returnReq.sellerOrder.customerOrderId,
-          sellerOrderId: returnReq.sellerOrderId,
-          amountMinor: refundAmountMinor,
-          currency: SITE_CONFIG.defaultCurrency,
-          status: RefundStatus.SUCCEEDED,
-          reason: `Seller approved return #${returnRequestId}`,
-          externalRefundRef: `RET_REF_${Date.now()}`,
-        },
-      });
-
-      // Update seller order net payable and commission snapshots
-      await tx.sellerOrder.update({
-        where: { id: returnReq.sellerOrderId },
-        data: {
-          netSellerPayableMinor: { decrement: totalSellerDebit },
-          platformCommissionMinor: { decrement: totalCommissionReversedMinor },
-        },
-      });
-
-      // Financial double-entry adjustments
-      await tx.settlementLedger.create({
-        data: {
-          sellerOrgId,
-          sellerOrderId: returnReq.sellerOrderId,
-          entryType: SettlementEntryType.REFUND_DEBIT,
-          amountMinor: -totalSellerDebit,
-          balanceAfterMinor: 0,
-          status: SettlementStatus.SETTLED,
-          description: `Debit adjustment for return #${returnRequestId}`,
-          referenceId: `RET_REF_${returnRequestId}`,
-          actorUserId,
-        },
-      });
-
-      await tx.settlementLedger.create({
-        data: {
-          sellerOrgId,
-          sellerOrderId: returnReq.sellerOrderId,
-          entryType: SettlementEntryType.COMMISSION_REVERSAL_CREDIT,
-          amountMinor: totalCommissionReversedMinor,
-          balanceAfterMinor: 0,
-          status: SettlementStatus.SETTLED,
-          description: `Platform commission credit for return #${returnRequestId}`,
-          referenceId: `RET_COMM_${returnRequestId}`,
-          actorUserId,
-        },
-      });
-    }
-
-    const updated = await tx.returnRequest.update({
-      where: { id: returnRequestId },
-      data: {
-        status: toStatus,
-        resolvedAt: new Date(),
-        returnShippingLabelUrl: decision === "APPROVED" ? `/shipping/labels/return-${returnRequestId}.pdf` : null,
-      },
-    });
-
-    if (actorUserId) {
-      await tx.auditEvent.create({
-        data: {
-          actorUserId,
-          entityType: "ReturnRequest",
-          entityId: returnRequestId,
-          action: `RETURN_${decision}`,
-          detailsJson: JSON.stringify({ inspectionResult }),
-        },
-      });
-    }
-
-    return updated;
-  });
+  const action = decision === "APPROVED" ? "APPROVE" : decision === "REJECTED" ? "REJECT" : "MARK_RECEIVED";
+  return transitionReturnRequest(returnRequestId, action, { sellerOrgId, note: inspectionResult, actorUserId });
 }
 
 /**
@@ -488,23 +367,41 @@ export async function processManualSellerSettlement(input: {
     throw new Error("Seller organization not found.");
   }
 
-  // Calculate current eligible net balance for payout:
-  const eligibleEntries = await prisma.settlementLedger.findMany({
-    where: { sellerOrgId, status: SettlementStatus.ELIGIBLE },
-  });
-
-  const totalEligibleMinor = eligibleEntries.reduce((sum, e) => sum + e.amountMinor, 0);
-
-  if (payoutAmountMinor > totalEligibleMinor) {
-    throw new Error(
-      `INSUFFICIENT_SETTLED_FUNDS: Requested payout PKR ${payoutAmountMinor / 100} exceeds eligible balance PKR ${totalEligibleMinor / 100}.`
-    );
-  }
-
   return prisma.$transaction(async (tx) => {
+    // Serialize payouts per seller: lock the org row, then read the eligible balance
+    await tx.$queryRaw`SELECT id FROM "SellerOrg" WHERE id = ${sellerOrgId} FOR UPDATE`;
+    const ref = String(bankTransactionRef || "").trim();
+    if (ref.length < 3 || ref.length > 120) {
+      throw new Error("VALIDATION: Enter the bank transfer reference (3-120 characters).");
+    }
+    const duplicate = await tx.settlementLedger.findFirst({
+      where: { sellerOrgId, entryType: SettlementEntryType.MANUAL_PAYOUT, referenceId: ref },
+      select: { id: true },
+    });
+    if (duplicate) throw new Error("VALIDATION: A payout with this bank reference was already recorded for this seller.");
+    const eligibleEntries = await tx.settlementLedger.findMany({
+      where: { sellerOrgId, status: SettlementStatus.ELIGIBLE },
+      orderBy: { amountMinor: "asc" }, // debits (negative) first so they net against credits
+    });
+    const totalEligibleMinor = eligibleEntries.reduce((sum, e) => sum + e.amountMinor, 0);
+    if (payoutAmountMinor > totalEligibleMinor) {
+      throw new Error(
+        `VALIDATION: Requested payout PKR ${payoutAmountMinor / 100} exceeds the eligible balance PKR ${totalEligibleMinor / 100}.`
+      );
+    }
+
     // 1. Mark eligible entries as SETTLED up to payoutAmountMinor
     let remainingToSettle = payoutAmountMinor;
     for (const entry of eligibleEntries) {
+      if (entry.amountMinor < 0) {
+        // Debits (refunds) are netted into this payout
+        await tx.settlementLedger.update({
+          where: { id: entry.id },
+          data: { status: SettlementStatus.SETTLED, settledAt: new Date() },
+        });
+        remainingToSettle -= entry.amountMinor;
+        continue;
+      }
       if (remainingToSettle <= 0) break;
       if (entry.amountMinor <= remainingToSettle) {
         await tx.settlementLedger.update({
@@ -604,6 +501,14 @@ export async function recordFailedPayoutAdjustment(input: {
   const restoredAmount = Math.abs(payoutEntry.amountMinor);
 
   return prisma.$transaction(async (tx) => {
+    // Same lock as payouts: a reversal can only be recorded once
+    await tx.$queryRaw`SELECT id FROM "SellerOrg" WHERE id = ${sellerOrgId} FOR UPDATE`;
+    const alreadyReversed = await tx.settlementLedger.findFirst({
+      where: { sellerOrgId, entryType: SettlementEntryType.ADJUSTMENT, referenceId: `REV_${payoutReferenceId}` },
+      select: { id: true },
+    });
+    if (alreadyReversed) throw new Error("VALIDATION: This payout has already been marked as failed.");
+
     const adjustmentLedger = await tx.settlementLedger.create({
       data: {
         sellerOrgId,
@@ -703,7 +608,8 @@ export async function getSellerSettlementStatement(sellerOrgId: string) {
       subtotalMinor: o.subtotalMinor,
       shippingMinor: o.shippingMinor,
       totalMinor: o.totalMinor,
-      commissionRatePercent: sellerOrg.commissionRatePercent,
+      // Rate snapshotted on the order lines at checkout (rate changes never rewrite history)
+      commissionRatePercent: o.items[0]?.commissionRatePercent ?? sellerOrg.commissionRatePercent,
       platformCommissionMinor: o.platformCommissionMinor,
       netSellerPayableMinor: o.netSellerPayableMinor,
       settlementStatus,

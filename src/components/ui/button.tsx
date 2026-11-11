@@ -9,21 +9,21 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className = "", variant = "primary", size = "md", isLoading = false, children, disabled, ...props }, ref) => {
     const baseStyles =
-      "inline-flex items-center justify-center font-medium rounded-lg transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed select-none";
+      "inline-flex items-center justify-center font-medium rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas disabled:opacity-50 disabled:cursor-not-allowed select-none";
 
     const variantStyles = {
-      primary: "bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm focus:ring-emerald-500",
-      secondary: "bg-slate-900 hover:bg-slate-800 text-white shadow-sm focus:ring-slate-700",
-      accent: "bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm focus:ring-emerald-500",
-      outline: "border border-slate-300 hover:border-slate-400 bg-white hover:bg-slate-50 text-slate-800 focus:ring-slate-400",
-      danger: "bg-rose-600 hover:bg-rose-700 text-white shadow-sm focus:ring-rose-500",
-      ghost: "text-slate-600 hover:text-slate-900 hover:bg-slate-100 focus:ring-slate-300",
+      primary: "bg-ink hover:bg-ink-2 text-white focus-visible:ring-ink",
+      secondary: "bg-white hover:bg-canvas text-ink border border-line focus-visible:ring-ink",
+      accent: "bg-volt hover:brightness-95 text-ink font-semibold focus-visible:ring-ink",
+      outline: "border border-ink bg-transparent hover:bg-white text-ink focus-visible:ring-ink",
+      danger: "bg-rose-600 hover:bg-rose-700 text-white focus-visible:ring-rose-500",
+      ghost: "text-mute hover:text-ink hover:bg-white focus-visible:ring-ink",
     }[variant];
 
     const sizeStyles = {
-      sm: "text-xs px-3 py-1.5 min-h-[36px] gap-1.5",
-      md: "text-sm px-4 py-2.5 min-h-[44px] gap-2",
-      lg: "text-base px-6 py-3.5 min-h-[48px] gap-2.5 font-semibold",
+      sm: "text-[13px] px-4 py-1.5 min-h-[36px] gap-1.5",
+      md: "text-sm px-5 py-2.5 min-h-[44px] gap-2",
+      lg: "text-base px-7 py-3.5 min-h-[52px] gap-2.5",
     }[size];
 
     return (

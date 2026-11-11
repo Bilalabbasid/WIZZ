@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { clientErrorMessage, clientErrorStatus } from "@/lib/api-error";
 import { getCurrentUser } from "@/lib/auth";
 import {
   getSellerApplicationByUserId,
@@ -16,8 +17,8 @@ export async function GET() {
     const application = await getSellerApplicationByUserId(user.id);
     return NextResponse.json({ success: true, application });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Error fetching application";
-    return NextResponse.json({ error: message }, { status: 400 });
+    const message = clientErrorMessage(err, "Error fetching application");
+    return NextResponse.json({ error: message }, { status: clientErrorStatus(err) });
   }
 }
 
@@ -36,18 +37,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, application: draft });
     }
 
-    // Submit action requires fields
-    if (!formData.legalBusinessName || !formData.tradingName || !formData.contactEmail) {
-      return NextResponse.json(
-        { error: "Legal business name, trading name, and contact email are required." },
-        { status: 400 }
-      );
-    }
-
     const application = await submitSellerApplication(user.id, formData);
     return NextResponse.json({ success: true, application });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Error saving application";
-    return NextResponse.json({ error: message }, { status: 400 });
+    const message = clientErrorMessage(err, "Error saving application");
+    return NextResponse.json({ error: message }, { status: clientErrorStatus(err) });
   }
 }

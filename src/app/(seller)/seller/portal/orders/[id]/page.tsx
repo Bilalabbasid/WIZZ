@@ -19,6 +19,72 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { formatPkr } from "@/lib/formatters";
 
+const STATUS_HELP: Record<string, string> = {
+  PENDING_PAYMENT: "Waiting for the customer's online payment. Do not pack yet.",
+  CONFIRMED: "Ready to pack. Start packing, then dispatch it with your courier below.",
+  PACKING: "Being packed. Dispatch it with your courier below when it is handed over.",
+  DISPATCHED: "With the courier. Mark it delivered once the courier confirms delivery.",
+  DELIVERED: "Delivered. Returns can be requested within 30 days.",
+  CANCELLED: "Cancelled. Stock was returned to your inventory.",
+};
+
+const STATUS_DONE: Record<string, string> = {
+  PACKING: "Package moved to packing.",
+  CONFIRMED: "Package moved back to confirmed.",
+  DELIVERED: "Package marked delivered.",
+  CANCELLED: "Package cancelled. The customer sees this on their order page.",
+};
+
+type Minor = number | bigint;
+
+interface OrderLine {
+  id: string;
+  productTitleSnapshot: string;
+  variantNameSnapshot: string;
+  skuSnapshot: string;
+  quantity: number;
+  unitPriceMinor: Minor;
+  totalMinor: Minor;
+  commissionRatePercent?: number;
+}
+
+interface OrderShipment {
+  id: string;
+  status: string;
+  carrierName?: string | null;
+  trackingNumber?: string | null;
+  shippedAt?: string | null;
+}
+
+interface SellerOrderDetail {
+  id: string;
+  sellerOrderNumber: string;
+  status: string;
+  createdAt: string;
+  platformCommissionMinor: Minor;
+  shippingMinor: Minor;
+  netSellerPayableMinor: Minor;
+  items: OrderLine[];
+  shipments?: OrderShipment[];
+  customerOrder: {
+    orderNumber: string;
+    customerEmail: string;
+    customerPhone?: string | null;
+    paymentStatus: string;
+    shippingAddressJson: string;
+  };
+}
+
+interface ShippingAddress {
+  fullName?: string;
+  street1?: string;
+  street2?: string;
+  city?: string;
+  stateProvince?: string;
+  postalCode?: string;
+  phone?: string;
+}
+
 export default function SellerOrderDetailPage({
   params,
 }: {
@@ -27,23 +93,21 @@ export default function SellerOrderDetailPage({
   const router = useRouter();
   const { id } = use(params);
 
-  const [order, setOrder] = useState<any>(null);
+  const [order, setOrder] = useState<SellerOrderDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
 
   // Status update
-  const [newStatus, setNewStatus] = useState<string>("");
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [showCancel, setShowCancel] = useState(false);
 
   // Shipment dispatch form
   const [carrierName, setCarrierName] = useState("TCS Express");
-  const [trackingNumber, setTrackingNumber] = useState(`PK-${Date.now().toString().slice(-8)}`);
+  const [trackingNumber, setTrackingNumber] = useState("");
+  const [trackingUrl, setTrackingUrl] = useState("");
   const [isDispatching, setIsDispatching] = useState(false);
-
-  useEffect(() => {
-    loadOrder();
-  }, [id]);
 
   const loadOrder = async () => {
     setIsLoading(true);
@@ -52,7 +116,6 @@ export default function SellerOrderDetailPage({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to load order");
       setOrder(data.order);
-      setNewStatus(data.order.status);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Error loading order");
     } finally {
@@ -60,7 +123,15 @@ export default function SellerOrderDetailPage({
     }
   };
 
-  const handleUpdateStatus = async () => {
+  useEffect(() => {
+    void Promise.resolve().then(loadOrder);
+  }, [id]);
+
+  const handleUpdateStatus = async (newStatus: string) => {
+    if (newStatus === "CANCELLED" && cancelReason.trim().length < 3) {
+      setError("Enter a reason for the customer before cancelling.");
+      return;
+    }
     setIsUpdatingStatus(true);
     setError(null);
     setFeedback(null);
@@ -68,11 +139,13 @@ export default function SellerOrderDetailPage({
       const res = await fetch(`/api/seller/orders/${id}/status`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({ status: newStatus, reason: cancelReason.trim() || undefined }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to update status");
-      setFeedback(`Order status updated to ${newStatus}.`);
+      setFeedback(STATUS_DONE[newStatus] || "Order updated.");
+      setShowCancel(false);
+      setCancelReason("");
       loadOrder();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Error updating status");
@@ -93,12 +166,12 @@ export default function SellerOrderDetailPage({
         body: JSON.stringify({
           carrierName,
           trackingNumber,
-          trackingUrl: `https://tracking.wizz.pk/${trackingNumber}`,
+          trackingUrl: trackingUrl.trim() || undefined,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to create shipment");
-      setFeedback(`Waybill generated! Package marked DISPATCHED with ${carrierName}.`);
+      setFeedback(`Package dispatched with ${carrierName}. The customer can now see the tracking number.`);
       loadOrder();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Error dispatching shipment");
@@ -119,7 +192,7 @@ export default function SellerOrderDetailPage({
     );
   }
 
-  let address: any = {};
+  let address: ShippingAddress = {};
   try {
     address = JSON.parse(order.customerOrder.shippingAddressJson);
   } catch {
@@ -188,7 +261,7 @@ export default function SellerOrderDetailPage({
       <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden">
         <div className="p-6 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Boxes size={18} className="text-indigo-600" />
+            <Boxes size={18} className="text-brand-600" />
             <h2 className="text-sm font-bold text-slate-900">Package Contents</h2>
           </div>
           <span className="text-xs text-slate-400">
@@ -197,7 +270,7 @@ export default function SellerOrderDetailPage({
         </div>
 
         <div className="divide-y divide-slate-100">
-          {order.items.map((item: any) => (
+          {order.items.map((item) => (
             <div key={item.id} className="p-6 flex items-center justify-between gap-4 text-xs">
               <div>
                 <h3 className="font-bold text-slate-900 text-sm">{item.productTitleSnapshot}</h3>
@@ -222,7 +295,9 @@ export default function SellerOrderDetailPage({
         {/* Financial Summary */}
         <div className="bg-slate-50 p-6 border-t border-slate-100 flex flex-col sm:flex-row justify-between gap-4 text-xs">
           <div>
-            <span className="text-slate-500">Commission Deducted (10%):</span>
+            <span className="text-slate-500">
+              Commission Deducted ({order.items[0]?.commissionRatePercent ?? 0}%):
+            </span>
             <div className="font-bold text-rose-600">
               -{formatPkr(order.platformCommissionMinor)}
             </div>
@@ -245,7 +320,7 @@ export default function SellerOrderDetailPage({
         {/* Destination Address */}
         <div className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm space-y-4">
           <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
-            <MapPin size={16} className="text-indigo-600" />
+            <MapPin size={16} className="text-brand-600" />
             <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800">
               Destination Delivery Address
             </h2>
@@ -269,34 +344,61 @@ export default function SellerOrderDetailPage({
         {/* Packing Status Management */}
         <div className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm space-y-4">
           <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
-            <PackageOpen size={16} className="text-indigo-600" />
+            <PackageOpen size={16} className="text-brand-600" />
             <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800">
               Update Packing Status
             </h2>
           </div>
 
-          <div className="space-y-3">
-            <select
-              value={newStatus}
-              onChange={(e) => setNewStatus(e.target.value)}
-              className="w-full text-xs rounded-xl border border-slate-300 p-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              <option value="CONFIRMED">CONFIRMED (Awaiting Packing)</option>
-              <option value="PACKING">PACKING (In Warehouse Assembly)</option>
-              <option value="DISPATCHED">DISPATCHED (Handed to Carrier)</option>
-              <option value="DELIVERED">DELIVERED (Customer Received)</option>
-              <option value="CANCELLED">CANCELLED</option>
-            </select>
-
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleUpdateStatus}
-              isLoading={isUpdatingStatus}
-              disabled={isUpdatingStatus}
-            >
-              Update Status
-            </Button>
+          <div className="space-y-3 text-xs">
+            <p className="text-slate-600">{STATUS_HELP[order.status] || ""}</p>
+            <div className="flex flex-wrap gap-2">
+              {order.status === "CONFIRMED" && (
+                <Button size="sm" variant="outline" onClick={() => handleUpdateStatus("PACKING")} isLoading={isUpdatingStatus} disabled={isUpdatingStatus}>
+                  Start packing
+                </Button>
+              )}
+              {order.status === "PACKING" && (
+                <Button size="sm" variant="outline" onClick={() => handleUpdateStatus("CONFIRMED")} isLoading={isUpdatingStatus} disabled={isUpdatingStatus}>
+                  Move back to confirmed
+                </Button>
+              )}
+              {order.status === "DISPATCHED" && (
+                <Button size="sm" onClick={() => handleUpdateStatus("DELIVERED")} isLoading={isUpdatingStatus} disabled={isUpdatingStatus}>
+                  Mark delivered
+                </Button>
+              )}
+              {["PENDING_PAYMENT", "CONFIRMED", "PACKING"].includes(order.status) && !showCancel && (
+                <Button size="sm" variant="outline" onClick={() => setShowCancel(true)} disabled={isUpdatingStatus}>
+                  Cancel package
+                </Button>
+              )}
+            </div>
+            {showCancel && (
+              <div className="space-y-2 rounded-xl border border-rose-200 bg-rose-50/60 p-3">
+                <label htmlFor="cancel-reason" className="block font-semibold text-rose-800">
+                  Reason (shown to the customer)
+                </label>
+                <textarea
+                  id="cancel-reason"
+                  value={cancelReason}
+                  onChange={(e) => setCancelReason(e.target.value)}
+                  rows={2}
+                  maxLength={300}
+                  className="w-full rounded-lg border border-rose-200 bg-white p-2 focus:outline-none focus:ring-2 focus:ring-rose-400"
+                  placeholder="e.g. Item failed quality check"
+                />
+                <p className="text-rose-700">Stock goes back on sale. If the customer already paid, a refund is recorded for finance.</p>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="danger" onClick={() => handleUpdateStatus("CANCELLED")} isLoading={isUpdatingStatus} disabled={isUpdatingStatus}>
+                    Confirm cancellation
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setShowCancel(false)} disabled={isUpdatingStatus}>
+                    Keep package
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -305,7 +407,7 @@ export default function SellerOrderDetailPage({
       <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/90 shadow-sm space-y-6">
         <div className="flex items-center justify-between pb-3 border-b border-slate-100">
           <div className="flex items-center gap-2">
-            <Truck size={18} className="text-indigo-600" />
+            <Truck size={18} className="text-brand-600" />
             <h2 className="font-bold text-sm text-slate-900">
               Courier Dispatch & Waybill Generation
             </h2>
@@ -325,14 +427,14 @@ export default function SellerOrderDetailPage({
 
         {order.shipments && order.shipments.length > 0 ? (
           <div className="space-y-4">
-            {order.shipments.map((s: any) => (
+            {order.shipments.map((s) => (
               <div
                 key={s.id}
-                className="p-4 rounded-2xl bg-indigo-50/60 border border-indigo-200/70 text-xs space-y-2"
+                className="p-4 rounded-2xl bg-brand-50/60 border border-brand-200/70 text-xs space-y-2"
               >
                 <div className="flex items-center justify-between">
                   <div className="font-bold text-slate-900">
-                    Carrier: <span className="text-indigo-700">{s.carrierName}</span>
+                    Carrier: <span className="text-brand-700">{s.carrierName}</span>
                   </div>
                   <Badge variant="default" size="sm">
                     {s.status}
@@ -349,10 +451,17 @@ export default function SellerOrderDetailPage({
               </div>
             ))}
           </div>
+        ) : !["CONFIRMED", "PACKING"].includes(order.status) ? (
+          <p className="text-xs text-slate-500">
+            {order.status === "CANCELLED"
+              ? "This package was cancelled, so it cannot be dispatched."
+              : "This package can be dispatched once payment is confirmed."}
+          </p>
         ) : (
           <form onSubmit={handleCreateShipment} className="space-y-4">
             <p className="text-xs text-slate-500">
-              Assign an integrated logistics carrier (TCS, Leopards, M&P, Trax, PostEx) and generate the printable tracking waybill.
+              Book the parcel with your courier first, then enter the courier and the tracking number they gave you.
+              WIZZ.PK does not book couriers automatically.
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -363,7 +472,7 @@ export default function SellerOrderDetailPage({
                 <select
                   value={carrierName}
                   onChange={(e) => setCarrierName(e.target.value)}
-                  className="w-full text-xs rounded-xl border border-slate-300 p-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full text-xs rounded-xl border border-slate-300 p-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
                 >
                   <option value="TCS Express">TCS Express</option>
                   <option value="Leopards Courier">Leopards Courier</option>
@@ -374,22 +483,31 @@ export default function SellerOrderDetailPage({
               </div>
 
               <Input
-                label="Carrier Tracking / Airway Bill #"
+                label="Courier Tracking Number"
                 required
                 value={trackingNumber}
+                placeholder="As printed on the courier receipt"
+                pattern="[A-Za-z0-9\-]{4,40}"
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTrackingNumber(e.target.value)}
               />
             </div>
+            <Input
+              label="Tracking link (optional)"
+              type="url"
+              value={trackingUrl}
+              placeholder="https://"
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTrackingUrl(e.target.value)}
+            />
 
             <Button
               type="submit"
               size="lg"
               isLoading={isDispatching}
               disabled={isDispatching}
-              className="shadow-md shadow-indigo-600/20"
+              className="shadow-md shadow-brand-600/20"
             >
               <Truck size={16} />
-              <span>Generate Waybill & Dispatch Package</span>
+              <span>Dispatch Package</span>
             </Button>
           </form>
         )}

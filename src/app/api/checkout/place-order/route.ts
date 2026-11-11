@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { getCartToken } from "@/lib/cart-session";
 import { isGuestCheckoutAllowed } from "@/lib/flags";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit, clientIpFrom } from "@/lib/rate-limit";
 import { apiError } from "@/lib/api-error";
 import { placeOrderSchema, formatZodError } from "@/lib/validation";
 import { orderPath } from "@/lib/order-access";
@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
-    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown-ip";
+    const ip = clientIpFrom(req.headers);
     if (!checkRateLimit(`place_${ip}`, { windowMs: 60000, max: 15 }).success) {
       return NextResponse.json({ error: "Too many order attempts. Please wait a minute." }, { status: 429 });
     }

@@ -304,7 +304,7 @@ export default function SellerProductsPage() {
                       type="checkbox"
                       checked={r.isActive}
                       onChange={(e) => updateRow(i, { isActive: e.target.checked })}
-                      className="w-4 h-4 accent-emerald-600"
+                      className="w-4 h-4 accent-brand-600"
                     />
                     <span className="text-slate-700">{r.isActive ? "On" : "Off"}</span>
                   </label>
@@ -351,7 +351,7 @@ export default function SellerProductsPage() {
           </Button>
           <Link
             href="/seller/portal/products/new"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-sm"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold bg-brand-600 text-white hover:bg-brand-700 transition shadow-sm"
           >
             <PlusCircle size={15} />
             <span>Add product</span>
@@ -377,7 +377,7 @@ export default function SellerProductsPage() {
                 setEditingId(null);
               }}
               className={`relative px-3 py-2.5 text-xs font-bold whitespace-nowrap transition-colors ${
-                active ? "text-emerald-800" : "text-slate-600 hover:text-slate-900"
+                active ? "text-brand-800" : "text-slate-600 hover:text-slate-900"
               }`}
             >
               {tab.label}
@@ -387,14 +387,14 @@ export default function SellerProductsPage() {
                     tab.id === "attention" && count > 0
                       ? "bg-amber-100 text-amber-800"
                       : active
-                      ? "bg-emerald-100 text-emerald-800"
+                      ? "bg-brand-100 text-brand-800"
                       : "bg-slate-100 text-slate-600"
                   }`}
                 >
                   {count}
                 </span>
               )}
-              {active && <span className="absolute inset-x-2 -bottom-px h-0.5 bg-emerald-600 rounded-full" />}
+              {active && <span className="absolute inset-x-2 -bottom-px h-0.5 bg-brand-600 rounded-full" />}
             </button>
           );
         })}
@@ -473,7 +473,7 @@ export default function SellerProductsPage() {
                 </Button>
                 <Link
                   href="/seller/portal/products/new"
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold bg-brand-600 text-white hover:bg-brand-700 transition"
                 >
                   <PlusCircle size={14} />
                   <span>Add product</span>
@@ -517,7 +517,7 @@ export default function SellerProductsPage() {
                         </div>
                       )}
                       <div className="min-w-0">
-                        <Link href={`/seller/portal/products/${p.id}`} className="block font-bold text-sm text-slate-900 hover:text-emerald-800 line-clamp-1">
+                        <Link href={`/seller/portal/products/${p.id}`} className="block font-bold text-sm text-slate-900 hover:text-brand-800 line-clamp-1">
                           {p.title}
                         </Link>
                         <p className="text-[11px] text-slate-500 truncate">
@@ -559,7 +559,7 @@ export default function SellerProductsPage() {
                         {state.label}
                       </Badge>
                       {p.pendingChangesJson && p.moderationStatus === "PENDING_REVIEW" && (
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800 inline-flex items-center gap-1">
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-brand-100 text-brand-800 inline-flex items-center gap-1">
                           <Clock size={10} /> Edits in review
                         </span>
                       )}
@@ -581,7 +581,7 @@ export default function SellerProductsPage() {
                       )}
                       <Link
                         href={`/seller/portal/products/${p.id}`}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold text-emerald-700 hover:bg-emerald-50"
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold text-brand-700 hover:bg-brand-50"
                       >
                         <Edit3 size={13} /> Edit
                       </Link>

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { clientErrorMessage, clientErrorStatus } from "@/lib/api-error";
 import { getCurrentUser, requireRole } from "@/lib/auth";
 import { UserRole } from "@prisma/client";
 import { reconcileCodPayment } from "@/modules/orders/services";
@@ -32,8 +33,8 @@ export async function POST(
       order: updatedOrder,
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Error reconciling COD payment.";
-    const status = message.includes("FORBIDDEN") || message.includes("UNAUTHORIZED") ? 403 : 400;
+    const message = clientErrorMessage(err, "Error reconciling COD payment.");
+    const status = clientErrorStatus(err);
     return NextResponse.json({ error: message }, { status });
   }
 }

@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { clientErrorMessage, clientErrorStatus } from "@/lib/api-error";
 import { getCurrentUser } from "@/lib/auth";
 import { ensureCartToken, getCartToken } from "@/lib/cart-session";
 import {
+  getActiveCart,
   getOrCreateCart,
   addItemToCart,
   updateCartItemQuantity,
@@ -39,8 +41,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, cartId: cart.id });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Error updating cart";
-    return NextResponse.json({ error: message }, { status: 400 });
+    const message = clientErrorMessage(err, "Error updating cart");
+    return NextResponse.json({ error: message }, { status: clientErrorStatus(err) });
   }
 }
 
@@ -55,13 +57,14 @@ export async function PATCH(req: NextRequest) {
     }
     const qty = parseQuantity(quantity);
 
-    const cart = await getOrCreateCart(sessionToken, user?.id);
+    const cart = await getActiveCart(sessionToken, user?.id);
+    if (!cart) return NextResponse.json({ error: "Your cart is empty." }, { status: 404 });
     await updateCartItemQuantity(cart.id, variantId, qty);
 
     return NextResponse.json({ success: true });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Error updating cart item";
-    return NextResponse.json({ error: message }, { status: 400 });
+    const message = clientErrorMessage(err, "Error updating cart item");
+    return NextResponse.json({ error: message }, { status: clientErrorStatus(err) });
   }
 }
 
@@ -76,12 +79,13 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: "variantId is required" }, { status: 400 });
     }
 
-    const cart = await getOrCreateCart(sessionToken, user?.id);
+    const cart = await getActiveCart(sessionToken, user?.id);
+    if (!cart) return NextResponse.json({ success: true });
     await removeCartItem(cart.id, variantId);
 
     return NextResponse.json({ success: true });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Error removing cart item";
-    return NextResponse.json({ error: message }, { status: 400 });
+    const message = clientErrorMessage(err, "Error removing cart item");
+    return NextResponse.json({ error: message }, { status: clientErrorStatus(err) });
   }
 }

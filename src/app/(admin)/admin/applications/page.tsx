@@ -1,7 +1,9 @@
+import { ADMIN_ACTION_ROLES, hasAnyRole, requireAdminPage } from "@/modules/admin/access";
 import { getAllSellerApplications } from "@/modules/sellers/services";
 import { AdminApplicationReview } from "@/components/admin-application-review";
 
 export default async function AdminApplicationsPage() {
+  const user = await requireAdminPage("applications", "/admin/applications");
   const applications = await getAllSellerApplications();
 
   const mappedApplications = applications.map((a) => ({
@@ -40,7 +42,7 @@ export default async function AdminApplicationsPage() {
   return (
     <div className="space-y-8">
       <div>
-        <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider">
+        <span className="text-xs font-bold text-brand-400 uppercase tracking-wider">
           Compliance & Onboarding
         </span>
         <h1 className="text-3xl font-black tracking-tight text-white mt-1">
@@ -51,7 +53,7 @@ export default async function AdminApplicationsPage() {
         </p>
       </div>
 
-      <AdminApplicationReview applications={mappedApplications} />
+      <AdminApplicationReview applications={mappedApplications} canReview={hasAnyRole(user.role, ADMIN_ACTION_ROLES.applicationReview)} />
     </div>
   );
 }

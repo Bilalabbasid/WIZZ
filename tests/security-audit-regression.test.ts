@@ -311,7 +311,12 @@ async function runSecurityAuditSuite() {
   }
 
   console.log("\n🧪 [TEST 4] Return Resolution Cross-Tenant Isolation");
-  // Customer A initiates a legitimate return request
+  // Deliver Seller A's package through the real fulfilment flow, then Customer A returns an item
+  {
+    const { createShipment, addShipmentMilestone } = await import("../src/modules/fulfillment/services");
+    const shipment = await createShipment(sellerSuborderA.id, "TCS Express", `TCS-SEC-${Date.now()}`);
+    await addShipmentMilestone(shipment.id, "DELIVERED");
+  }
   const returnReqA = await createReturnRequest(
     sellerSuborderA.id,
     customerA.id,

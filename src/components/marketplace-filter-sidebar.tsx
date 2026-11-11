@@ -4,18 +4,8 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { formatCurrency } from "@/lib/formatters";
 import { SITE_CONFIG } from "@/lib/config";
-import {
-  SlidersHorizontal,
-  Check,
-  Star,
-  Tag,
-  Truck,
-  RotateCcw,
-  X,
-  ChevronRight,
-  Filter,
-  ArrowRight,
-} from "lucide-react";
+import { SlidersHorizontal, Check, Star, X } from "lucide-react";
+import { FOCUS_RING, MONO_LABEL } from "./catalog-ui";
 
 export interface CategoryFacet {
   id: string;
@@ -38,6 +28,7 @@ export interface MarketplaceFilterSidebarProps {
   currentParams: {
     category?: string;
     brand?: string;
+    seller?: string;
     minPrice?: string;
     maxPrice?: string;
     inStock?: string;
@@ -48,36 +39,122 @@ export interface MarketplaceFilterSidebarProps {
     q?: string;
   };
   basePath?: string;
+  /**
+   * "query" (default): department links filter the current listing via ?category=.
+   * "path": department links navigate to /categories/{slug} (used on category pages,
+   * where the listed departments are sub-categories).
+   */
+  categoryLinkMode?: "query" | "path";
+  /** Label of the "all departments" link (e.g. "All Electronics" on a category page). */
+  allCategoriesLabel?: string;
   totalResults?: number;
+  /** Free-delivery threshold from admin commerce settings. */
+  freeShippingThresholdMinor?: number;
+  /**
+   * "all" (default) renders the desktop sidebar and the mobile "Filters" pill.
+   * "sidebar" renders only the desktop column; "trigger" only the mobile pill + drawer,
+   * so pages can place the pill in their toolbar.
+   */
+  display?: "all" | "sidebar" | "trigger";
 }
+
+const PRESERVED_KEYS = [
+  "q",
+  "category",
+  "brand",
+  "seller",
+  "minPrice",
+  "maxPrice",
+  "inStock",
+  "rating",
+  "deals",
+  "freeShipping",
+  "sort",
+] as const;
+
+const FILTER_KEYS = ["category", "brand", "seller", "minPrice", "maxPrice", "inStock", "rating", "deals", "freeShipping"] as const;
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="space-y-3 border-t border-line py-5">
+      <h3 className={`${MONO_LABEL} text-mute`}>{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+/** Square ink checkbox visual for link-based toggles. */
+function CheckMark({ on }: { on: boolean }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] border ${
+        on ? "border-ink bg-ink text-white" : "border-mute-2 bg-white"
+      }`}
+    >
+      {on && <Check size={12} strokeWidth={2.5} />}
+    </span>
+  );
+}
+
+const rowLink = `flex min-h-11 items-center justify-between gap-3 rounded-xl px-2 -mx-2 text-sm text-ink transition-colors hover:bg-white ${FOCUS_RING}`;
+
+const chip = (on: boolean) =>
+  `inline-flex min-h-11 items-center gap-1.5 rounded-full border px-4 text-[13px] font-medium transition-colors ${FOCUS_RING} ${
+    on ? "border-ink bg-ink text-white" : "border-line bg-white text-ink hover:border-ink"
+  }`;
 
 export function MarketplaceFilterSidebar({
   categories,
   brands,
   currentParams,
   basePath = "/products",
+  categoryLinkMode = "query",
+  allCategoriesLabel = "All departments",
   totalResults,
+  freeShippingThresholdMinor = SITE_CONFIG.shipping.freeShippingThresholdMinor,
+  display = "all",
 }: MarketplaceFilterSidebarProps) {
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [brandSearchQuery, setBrandSearchQuery] = useState("");
   const filterTriggerRef = React.useRef<HTMLButtonElement>(null);
+  const closeButtonRef = React.useRef<HTMLButtonElement>(null);
+  const panelRef = React.useRef<HTMLDivElement>(null);
 
   const handleCloseMobileDrawer = () => {
     setMobileDrawerOpen(false);
     setTimeout(() => filterTriggerRef.current?.focus(), 50);
   };
 
-  // Keyboard navigation & body scroll lock for mobile drawer
+  // Keyboard handling (Escape, focus trap) & body scroll lock for the mobile drawer
   React.useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape" && mobileDrawerOpen) {
+      if (!mobileDrawerOpen) return;
+      if (e.key === "Escape") {
         setMobileDrawerOpen(false);
         filterTriggerRef.current?.focus();
+        return;
+      }
+      if (e.key === "Tab" && panelRef.current) {
+        const focusables = panelRef.current.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select, [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
       }
     }
     if (mobileDrawerOpen) {
       document.body.style.overflow = "hidden";
       window.addEventListener("keydown", handleKeyDown);
+      closeButtonRef.current?.focus();
     } else {
       document.body.style.overflow = "";
     }
@@ -94,259 +171,167 @@ export function MarketplaceFilterSidebar({
 
   function buildUrl(updates: Record<string, string | undefined>) {
     const next = new URLSearchParams();
-    if (currentParams.q) next.set("q", currentParams.q);
-    if (currentParams.category) next.set("category", currentParams.category);
-    if (currentParams.brand) next.set("brand", currentParams.brand);
-    if (currentParams.minPrice) next.set("minPrice", currentParams.minPrice);
-    if (currentParams.maxPrice) next.set("maxPrice", currentParams.maxPrice);
-    if (currentParams.inStock) next.set("inStock", currentParams.inStock);
-    if (currentParams.rating) next.set("rating", currentParams.rating);
-    if (currentParams.deals) next.set("deals", currentParams.deals);
-    if (currentParams.freeShipping) next.set("freeShipping", currentParams.freeShipping);
-    if (currentParams.sort) next.set("sort", currentParams.sort);
-
-    for (const [key, val] of Object.entries(updates)) {
-      if (val === undefined || val === "") {
-        next.delete(key);
-      } else {
-        next.set(key, val);
-      }
+    for (const key of PRESERVED_KEYS) {
+      const v = currentParams[key];
+      if (typeof v === "string" && v !== "") next.set(key, v);
     }
-
+    for (const [key, val] of Object.entries(updates)) {
+      if (val === undefined || val === "") next.delete(key);
+      else next.set(key, val);
+    }
     const qs = next.toString();
     return `${basePath}${qs ? `?${qs}` : ""}`;
   }
 
-  const hasActiveFilters = Boolean(
-    currentParams.category ||
-      currentParams.brand ||
-      currentParams.minPrice ||
-      currentParams.maxPrice ||
-      currentParams.inStock ||
-      currentParams.rating ||
-      currentParams.deals ||
-      currentParams.freeShipping
-  );
+  const activeFilterCount = FILTER_KEYS.filter((k) => {
+    const v = currentParams[k];
+    return typeof v === "string" && v !== "";
+  }).length - (currentParams.minPrice && currentParams.maxPrice ? 1 : 0);
+  const hasActiveFilters = activeFilterCount > 0;
 
-  const activeCategory = categories.find((c) => c.slug === currentParams.category);
-  const activeBrand = brands.find((b) => b.slug === currentParams.brand);
+  const filteredBrands = brands.filter((b) => b.name.toLowerCase().includes(brandSearchQuery.toLowerCase()));
 
-  const filteredBrands = brands.filter((b) =>
-    b.name.toLowerCase().includes(brandSearchQuery.toLowerCase())
-  );
+  const clearHref = buildUrl(Object.fromEntries(FILTER_KEYS.map((k) => [k, undefined])));
 
-  const filterContent = (
-    <div className="space-y-6">
-      {/* Header & Reset */}
-      <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-        <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
-          <SlidersHorizontal size={15} className="text-emerald-600" />
-          <span>Refine Results</span>
-        </h3>
+  const filterContent = (idPrefix: string) => (
+    <div>
+      {/* Header & reset */}
+      <div className={`flex min-h-11 items-center justify-between gap-3 pb-3 ${idPrefix === "mobile" && !hasActiveFilters ? "hidden" : ""}`}>
+        {/* The drawer already has its own title */}
+        <h2 className={idPrefix === "mobile" ? "sr-only" : "text-[17px] font-semibold tracking-[-0.02em] text-ink"}>Filters</h2>
         {hasActiveFilters && (
           <Link
-            href={buildUrl({
-              category: undefined,
-              brand: undefined,
-              minPrice: undefined,
-              maxPrice: undefined,
-              inStock: undefined,
-              rating: undefined,
-              deals: undefined,
-              freeShipping: undefined,
-            })}
-            className="text-xs font-bold text-rose-600 hover:text-rose-700 hover:underline"
+            href={clearHref}
+            className={`inline-flex min-h-11 items-center rounded-full px-2 text-[13px] font-medium text-ink underline underline-offset-4 ${FOCUS_RING}`}
           >
-            Clear All
+            Clear all
           </Link>
         )}
       </div>
 
-      {/* 1. Deals & Promotions (Amazon style) */}
-      <div className="space-y-2 pb-4 border-b border-slate-100">
-        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">
-          Deals & Promotions
-        </span>
-        <div className="space-y-1.5">
-          <Link
-            href={buildUrl({ deals: dealsOnly ? undefined : "true" })}
-            className={`flex items-center justify-between p-2 rounded-lg text-xs font-semibold transition-colors ${
-              dealsOnly
-                ? "bg-rose-50 border border-rose-200 text-rose-800"
-                : "hover:bg-slate-50 text-slate-700"
-            }`}
-          >
-            <span className="flex items-center gap-2">
-              <Tag size={13} className="text-rose-600" />
-              <span>Today's Deals / On Sale</span>
-            </span>
-            {dealsOnly && <Check size={14} className="text-rose-600" />}
-          </Link>
+      {/* Deals, delivery and availability toggles */}
+      <Section title="Offers & availability">
+        <ul className="space-y-0.5">
+          <li>
+            <Link href={buildUrl({ deals: dealsOnly ? undefined : "true" })} className={rowLink}>
+              <span className="flex items-center gap-3">
+                <CheckMark on={dealsOnly} />
+                <span>On sale</span>
+              </span>
+              <span className="sr-only">{dealsOnly ? "(selected)" : ""}</span>
+            </Link>
+          </li>
+          <li>
+            <Link href={buildUrl({ freeShipping: freeShippingOnly ? undefined : "true" })} className={rowLink}>
+              <span className="flex items-center gap-3">
+                <CheckMark on={freeShippingOnly} />
+                <span>
+                  Free delivery <span className="text-mute">({formatCurrency(freeShippingThresholdMinor)}+)</span>
+                </span>
+              </span>
+              <span className="sr-only">{freeShippingOnly ? "(selected)" : ""}</span>
+            </Link>
+          </li>
+          <li>
+            <Link href={buildUrl({ inStock: inStockOnly ? undefined : "true" })} className={rowLink}>
+              <span className="flex items-center gap-3">
+                <CheckMark on={inStockOnly} />
+                <span>In stock only</span>
+              </span>
+              <span className="sr-only">{inStockOnly ? "(selected)" : ""}</span>
+            </Link>
+          </li>
+        </ul>
+      </Section>
 
-          <Link
-            href={buildUrl({ freeShipping: freeShippingOnly ? undefined : "true" })}
-            className={`flex items-center justify-between p-2 rounded-lg text-xs font-semibold transition-colors ${
-              freeShippingOnly
-                ? "bg-emerald-50 border border-emerald-200 text-emerald-800"
-                : "hover:bg-slate-50 text-slate-700"
-            }`}
-          >
-            <span className="flex items-center gap-2">
-              <Truck size={13} className="text-emerald-600" />
-              <span>Free Delivery ({formatCurrency(SITE_CONFIG.shipping.freeShippingThresholdMinor)}+)</span>
-            </span>
-            {freeShippingOnly && <Check size={14} className="text-emerald-600" />}
-          </Link>
-        </div>
-      </div>
-
-      {/* 2. Availability / In-Stock Only */}
-      <div className="space-y-2 pb-4 border-b border-slate-100">
-        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">
-          Availability
-        </span>
-        <Link
-          href={buildUrl({ inStock: inStockOnly ? undefined : "true" })}
-          className={`flex items-center justify-between p-2 rounded-lg border text-xs font-semibold transition-all ${
-            inStockOnly
-              ? "bg-emerald-50/70 border-emerald-300 text-emerald-800"
-              : "bg-slate-50/50 border-slate-200 text-slate-700 hover:bg-slate-100"
-          }`}
-        >
-          <span className="flex items-center gap-2">
-            <span
-              className={`w-2 h-2 rounded-full ${
-                inStockOnly ? "bg-emerald-500" : "bg-slate-300"
-              }`}
-            />
-            <span>In-Stock Items Only</span>
-          </span>
-          {inStockOnly && <Check size={14} className="text-emerald-600" />}
-        </Link>
-      </div>
-
-      {/* 3. Customer Reviews (Amazon Star Rating Filter) */}
-      <div className="space-y-2 pb-4 border-b border-slate-100">
-        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">
-          Customer Reviews
-        </span>
-        <div className="space-y-1">
-          {[4, 3, 2, 1].map((starThreshold) => {
-            const isSelected = currentRating === starThreshold;
+      {/* Customer rating */}
+      <Section title="Customer rating">
+        <div className="flex flex-wrap gap-2">
+          {[4, 3, 2, 1].map((stars) => {
+            const isSelected = currentRating === stars;
             return (
               <Link
-                key={starThreshold}
-                href={buildUrl({
-                  rating: isSelected ? undefined : String(starThreshold),
-                })}
-                className={`flex items-center justify-between p-1.5 rounded-lg text-xs transition-colors ${
-                  isSelected
-                    ? "bg-amber-50 text-amber-900 font-bold border border-amber-200"
-                    : "text-slate-700 hover:bg-slate-50"
-                }`}
+                key={stars}
+                href={buildUrl({ rating: isSelected ? undefined : String(stars) })}
+                aria-current={isSelected ? "true" : undefined}
+                className={chip(isSelected)}
               >
-                <div className="flex items-center gap-1.5">
-                  <div className="flex items-center text-amber-400">
-                    {Array.from({ length: 5 }).map((_, i) => (
-                      <Star
-                        key={i}
-                        size={13}
-                        className={
-                          i < starThreshold
-                            ? "fill-amber-400 text-amber-400"
-                            : "text-slate-300 fill-slate-100"
-                        }
-                      />
-                    ))}
-                  </div>
-                  <span className="text-[11px] font-medium text-slate-600">& Up</span>
-                </div>
-                {isSelected && <Check size={13} className="text-amber-700" />}
+                <Star size={13} aria-hidden="true" className={isSelected ? "fill-white text-white" : "fill-ink text-ink"} />
+                <span>{stars}+</span>
+                <span className="sr-only"> stars and up</span>
               </Link>
             );
           })}
         </div>
-      </div>
+      </Section>
 
-      {/* 4. Departments / Categories */}
+      {/* Departments / categories */}
       {categories.length > 0 && (
-        <div className="space-y-2 pb-4 border-b border-slate-100">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">
-            Department
-          </span>
-          <ul className="space-y-1 text-xs">
+        <Section title="Department">
+          <ul className="space-y-0.5">
             <li>
               <Link
                 href={buildUrl({ category: undefined })}
-                className={`block py-1 px-2 rounded-lg transition-colors ${
-                  !currentParams.category
-                    ? "bg-emerald-50 text-emerald-800 font-bold"
-                    : "text-slate-600 hover:bg-slate-50"
-                }`}
+                aria-current={!currentParams.category ? "true" : undefined}
+                className={`${rowLink} ${!currentParams.category ? "font-semibold" : ""}`}
               >
-                All Departments
+                <span className="flex items-center gap-3">
+                  <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${!currentParams.category ? "bg-ink" : "bg-transparent"}`} />
+                  <span>{allCategoriesLabel}</span>
+                </span>
               </Link>
             </li>
-            {categories.map((c) => (
-              <li key={c.id}>
-                <Link
-                  href={buildUrl({ category: c.slug })}
-                  className={`flex items-center justify-between py-1 px-2 rounded-lg transition-colors ${
-                    currentParams.category === c.slug
-                      ? "bg-emerald-50 text-emerald-800 font-bold"
-                      : "text-slate-600 hover:bg-slate-50"
-                  }`}
-                >
-                  <span className="truncate pr-2">{c.name}</span>
-                  {c._count?.products !== undefined && (
-                    <span className="text-[10px] text-slate-400 font-mono">
-                      {c._count.products}
+            {categories.map((c) => {
+              const isSelected = currentParams.category === c.slug;
+              return (
+                <li key={c.id}>
+                  <Link
+                    href={categoryLinkMode === "path" ? `/categories/${c.slug}` : buildUrl({ category: c.slug })}
+                    aria-current={isSelected ? "true" : undefined}
+                    className={`${rowLink} ${isSelected ? "font-semibold" : ""}`}
+                  >
+                    <span className="flex min-w-0 items-center gap-3">
+                      <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${isSelected ? "bg-ink" : "bg-transparent"}`} />
+                      <span className="truncate">{c.name}</span>
                     </span>
-                  )}
-                </Link>
-              </li>
-            ))}
+                    {c._count?.products !== undefined && (
+                      <span className="font-mono text-xs text-mute">{c._count.products}</span>
+                    )}
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
-        </div>
+        </Section>
       )}
 
-      {/* 5. Brands (Amazon & Daraz Checkboxes) */}
+      {/* Brands */}
       {brands.length > 0 && (
-        <div className="space-y-2 pb-4 border-b border-slate-100">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">
-            Featured Brands
-          </span>
-
+        <Section title="Brand">
           {brands.length > 6 && (
-            <input
-              type="text"
-              placeholder="Search brands..."
-              value={brandSearchQuery}
-              onChange={(e) => setBrandSearchQuery(e.target.value)}
-              className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
-            />
+            <div>
+              <label htmlFor={`${idPrefix}-brand-search`} className="sr-only">
+                Search brands
+              </label>
+              <input
+                id={`${idPrefix}-brand-search`}
+                type="search"
+                placeholder="Search brands"
+                value={brandSearchQuery}
+                onChange={(e) => setBrandSearchQuery(e.target.value)}
+                className={`h-11 w-full rounded-full border border-line bg-white px-4 text-sm text-ink placeholder:text-mute-2 ${FOCUS_RING}`}
+              />
+            </div>
           )}
 
-          <ul className="space-y-1 text-xs max-h-52 overflow-y-auto pr-1">
+          <ul className="max-h-64 space-y-0.5 overflow-y-auto pr-1">
             <li>
-              <Link
-                href={buildUrl({ brand: undefined })}
-                className={`flex items-center gap-2 py-1 px-2 rounded-lg transition-colors ${
-                  !currentParams.brand
-                    ? "bg-emerald-50 text-emerald-800 font-bold"
-                    : "text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                <span
-                  className={`w-3.5 h-3.5 rounded border flex items-center justify-center ${
-                    !currentParams.brand
-                      ? "border-emerald-600 bg-emerald-600 text-white"
-                      : "border-slate-300 bg-white"
-                  }`}
-                >
-                  {!currentParams.brand && <Check size={10} />}
+              <Link href={buildUrl({ brand: undefined })} className={rowLink}>
+                <span className="flex items-center gap-3">
+                  <CheckMark on={!currentParams.brand} />
+                  <span>All brands</span>
                 </span>
-                <span>All Brands</span>
+                <span className="sr-only">{!currentParams.brand ? "(selected)" : ""}</span>
               </Link>
             </li>
             {filteredBrands.map((b) => {
@@ -354,220 +339,176 @@ export function MarketplaceFilterSidebar({
               const count = b._count?.products ?? b.count;
               return (
                 <li key={b.id}>
-                  <Link
-                    href={buildUrl({ brand: isSelected ? undefined : b.slug })}
-                    className={`flex items-center justify-between py-1 px-2 rounded-lg transition-colors ${
-                      isSelected
-                        ? "bg-emerald-50 text-emerald-800 font-bold"
-                        : "text-slate-600 hover:bg-slate-50"
-                    }`}
-                  >
-                    <span className="flex items-center gap-2 truncate pr-2">
-                      <span
-                        className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${
-                          isSelected
-                            ? "border-emerald-600 bg-emerald-600 text-white"
-                            : "border-slate-300 bg-white"
-                        }`}
-                      >
-                        {isSelected && <Check size={10} />}
-                      </span>
+                  <Link href={buildUrl({ brand: isSelected ? undefined : b.slug })} className={rowLink}>
+                    <span className="flex min-w-0 items-center gap-3">
+                      <CheckMark on={isSelected} />
                       <span className="truncate">{b.name}</span>
+                      <span className="sr-only">{isSelected ? "(selected)" : ""}</span>
                     </span>
-                    {count !== undefined && (
-                      <span className="text-[10px] text-slate-400 font-mono">
-                        ({count})
-                      </span>
-                    )}
+                    {count !== undefined && <span className="font-mono text-xs text-mute">{count}</span>}
                   </Link>
                 </li>
               );
             })}
+            {filteredBrands.length === 0 && (
+              <li className="px-1 py-2 text-[13px] text-mute">No brands match &ldquo;{brandSearchQuery}&rdquo;.</li>
+            )}
           </ul>
-        </div>
+        </Section>
       )}
 
-      {/* 6. Price Range & Quick Presets (Daraz & Amazon) */}
-      <div className="space-y-3">
-        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">
-          Price (PKR)
-        </span>
-
-        {/* Quick Price Bands */}
-        <div className="space-y-1 text-xs">
+      {/* Price */}
+      <Section title="Price (PKR)">
+        <div className="flex flex-wrap gap-2">
           {[
-            { label: "Under PKR 5,000", min: "0", max: "5000" },
-            { label: "PKR 5,000 to PKR 15,000", min: "5000", max: "15000" },
-            { label: "PKR 15,000 to PKR 50,000", min: "15000", max: "50000" },
-            { label: "Over PKR 50,000", min: "50000", max: "" },
-          ].map((band, idx) => {
+            { label: "Under 5,000", min: "0", max: "5000" },
+            { label: "5,000–15,000", min: "5000", max: "15000" },
+            { label: "15,000–50,000", min: "15000", max: "50000" },
+            { label: "50,000+", min: "50000", max: "" },
+          ].map((band) => {
             const isBandActive =
               currentParams.minPrice === band.min &&
               (band.max ? currentParams.maxPrice === band.max : !currentParams.maxPrice);
-
             return (
               <Link
-                key={idx}
+                key={band.label}
                 href={buildUrl({
                   minPrice: isBandActive ? undefined : band.min,
                   maxPrice: isBandActive ? undefined : band.max || undefined,
                 })}
-                className={`block py-1 px-2 rounded-lg transition-colors ${
-                  isBandActive
-                    ? "bg-emerald-50 text-emerald-800 font-bold"
-                    : "text-slate-600 hover:bg-slate-50"
-                }`}
+                aria-current={isBandActive ? "true" : undefined}
+                className={chip(isBandActive)}
               >
-                {band.label}
+                <span className="font-mono">{band.label}</span>
               </Link>
             );
           })}
         </div>
 
-        {/* Custom Min / Max Inputs */}
-        <form method="GET" action={basePath} className="space-y-2 pt-2 border-t border-slate-100">
-          {currentParams.q && <input type="hidden" name="q" value={currentParams.q} />}
-          {currentParams.category && (
-            <input type="hidden" name="category" value={currentParams.category} />
-          )}
-          {currentParams.brand && (
-            <input type="hidden" name="brand" value={currentParams.brand} />
-          )}
-          {currentParams.inStock && (
-            <input type="hidden" name="inStock" value={currentParams.inStock} />
-          )}
-          {currentParams.rating && (
-            <input type="hidden" name="rating" value={currentParams.rating} />
-          )}
-          {currentParams.deals && (
-            <input type="hidden" name="deals" value={currentParams.deals} />
-          )}
-          {currentParams.freeShipping && (
-            <input type="hidden" name="freeShipping" value={currentParams.freeShipping} />
-          )}
-          {currentParams.sort && (
-            <input type="hidden" name="sort" value={currentParams.sort} />
-          )}
-
+        {/* Custom min / max */}
+        <form method="GET" action={basePath} className="space-y-2 pt-2">
+          {PRESERVED_KEYS.filter((k) => k !== "minPrice" && k !== "maxPrice").map((k) => {
+            const v = currentParams[k];
+            return typeof v === "string" && v !== "" ? <input key={k} type="hidden" name={k} value={v} /> : null;
+          })}
           <div className="grid grid-cols-2 gap-2">
             <div>
+              <label htmlFor={`${idPrefix}-min-price`} className="mb-1 block text-xs text-mute">
+                Min
+              </label>
               <input
+                id={`${idPrefix}-min-price`}
                 type="number"
+                inputMode="numeric"
                 name="minPrice"
                 min="0"
                 step="100"
-                placeholder="Min PKR"
+                placeholder="0"
                 defaultValue={currentParams.minPrice || ""}
-                className="w-full text-xs rounded-lg border border-slate-300 px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                className={`h-11 w-full rounded-full border border-line bg-white px-4 font-mono text-sm text-ink placeholder:text-mute-2 ${FOCUS_RING}`}
               />
             </div>
             <div>
+              <label htmlFor={`${idPrefix}-max-price`} className="mb-1 block text-xs text-mute">
+                Max
+              </label>
               <input
+                id={`${idPrefix}-max-price`}
                 type="number"
+                inputMode="numeric"
                 name="maxPrice"
                 min="0"
                 step="100"
-                placeholder="Max PKR"
+                placeholder="Any"
                 defaultValue={currentParams.maxPrice || ""}
-                className="w-full text-xs rounded-lg border border-slate-300 px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                className={`h-11 w-full rounded-full border border-line bg-white px-4 font-mono text-sm text-ink placeholder:text-mute-2 ${FOCUS_RING}`}
               />
             </div>
           </div>
           <button
             type="submit"
-            className="w-full text-xs bg-slate-900 text-white font-bold py-1.5 rounded-lg hover:bg-slate-800 transition-colors shadow-xs flex items-center justify-center gap-1.5"
+            className={`h-11 w-full rounded-full bg-ink text-sm font-medium text-white transition-colors hover:bg-ink-2 ${FOCUS_RING}`}
           >
-            <span>Apply Price</span>
-            <ArrowRight size={12} />
+            Apply price
           </button>
         </form>
-      </div>
+      </Section>
     </div>
   );
 
   return (
     <>
-      {/* Desktop Sticky Sidebar */}
-      <aside className="hidden lg:block space-y-6">
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs sticky top-28">
-          {filterContent}
-        </div>
-      </aside>
+      {/* Desktop column */}
+      {display !== "trigger" && (
+        <aside aria-label="Filters" className="hidden lg:block">
+          <div className="sticky top-28 max-h-[calc(100vh-8rem)] overflow-y-auto pb-6 pr-2 [scrollbar-width:thin]">{filterContent("desktop")}</div>
+        </aside>
+      )}
 
-      {/* Mobile Drawer Trigger Bar */}
-      <div className="lg:hidden w-full">
-        <button
-          ref={filterTriggerRef}
-          type="button"
-          onClick={() => setMobileDrawerOpen(true)}
-          aria-expanded={mobileDrawerOpen}
-          aria-label="Open filter and refinement drawer"
-          className="w-full flex items-center justify-between p-3.5 rounded-xl bg-white border border-slate-200 text-slate-800 text-xs font-bold shadow-xs hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-emerald-500 min-h-[44px]"
-        >
-          <span className="flex items-center gap-2">
-            <SlidersHorizontal size={15} className="text-emerald-600" />
-            <span>Refine & Filter Products</span>
+      {/* Mobile "Filters" pill + drawer */}
+      {display !== "sidebar" && (
+        <div className="lg:hidden">
+          <button
+            ref={filterTriggerRef}
+            type="button"
+            onClick={() => setMobileDrawerOpen(true)}
+            aria-expanded={mobileDrawerOpen}
+            aria-haspopup="dialog"
+            className={`inline-flex h-11 items-center gap-2 rounded-full border border-line bg-white px-[18px] text-sm font-medium text-ink transition-colors hover:border-ink ${FOCUS_RING}`}
+          >
+            <SlidersHorizontal size={16} aria-hidden="true" />
+            <span>Filters</span>
             {hasActiveFilters && (
-              <span className="px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold">
-                Active
+              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-ink px-1.5 font-mono text-[11px] text-white">
+                {activeFilterCount}
+                <span className="sr-only"> active</span>
               </span>
             )}
-          </span>
-          <span className="text-[11px] text-emerald-700 flex items-center gap-1 font-bold">
-            <span>Filter</span>
-            <ChevronRight size={14} />
-          </span>
-        </button>
+          </button>
 
-        {/* Mobile Slide-Over Drawer */}
-        {mobileDrawerOpen && (
-          <div className="fixed inset-0 z-50 flex">
-            {/* Backdrop */}
-            <div
-              className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity"
-              onClick={handleCloseMobileDrawer}
-              aria-hidden="true"
-            />
-
-            {/* Slide-over panel */}
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="filter-drawer-heading"
-              className="relative ml-auto w-full max-w-xs sm:max-w-sm bg-white h-full shadow-2xl flex flex-col z-10 animate-in slide-in-from-right duration-200"
-            >
-              <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
-                <div className="flex items-center gap-2">
-                  <Filter size={16} className="text-emerald-600" />
-                  <span id="filter-drawer-heading" className="font-extrabold text-sm text-slate-900">
-                    Filters & Refinement
+          {mobileDrawerOpen && (
+            <div className="fixed inset-0 z-50 flex">
+              <div className="fixed inset-0 bg-ink/50" onClick={handleCloseMobileDrawer} aria-hidden="true" />
+              <div
+                ref={panelRef}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="filter-drawer-heading"
+                className="relative z-10 ml-auto flex h-full w-full max-w-sm flex-col bg-canvas"
+              >
+                <div className="flex items-center justify-between border-b border-line px-5 py-3">
+                  <span id="filter-drawer-heading" className="text-[17px] font-semibold tracking-[-0.02em] text-ink">
+                    Filter products
                   </span>
+                  <button
+                    ref={closeButtonRef}
+                    type="button"
+                    onClick={handleCloseMobileDrawer}
+                    aria-label="Close filters"
+                    className={`flex h-11 w-11 items-center justify-center rounded-full border border-line bg-white text-ink hover:border-ink ${FOCUS_RING}`}
+                  >
+                    <X size={18} aria-hidden="true" />
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleCloseMobileDrawer}
-                  aria-label="Close filters drawer"
-                  className="w-11 h-11 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors focus-visible:ring-2 focus-visible:ring-emerald-500"
-                >
-                  <X size={20} />
-                </button>
-              </div>
 
-              <div className="flex-1 overflow-y-auto p-5">{filterContent}</div>
+                <div className="flex-1 overflow-y-auto px-5 pt-2">{filterContent("mobile")}</div>
 
-              <div className="p-4 border-t border-slate-200 bg-white">
-                <button
-                  type="button"
-                  onClick={handleCloseMobileDrawer}
-                  className="w-full py-3 bg-emerald-600 text-white font-bold text-xs rounded-xl hover:bg-emerald-700 transition min-h-[44px] shadow-sm"
-                >
-                  View {totalResults ? `${totalResults} Products` : "Results"}
-                </button>
+                <div className="border-t border-line bg-canvas px-5 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+                  <button
+                    type="button"
+                    onClick={handleCloseMobileDrawer}
+                    className={`h-[52px] w-full rounded-full bg-ink text-[15px] font-medium text-white hover:bg-ink-2 ${FOCUS_RING}`}
+                  >
+                    {typeof totalResults === "number"
+                      ? `Show ${totalResults} result${totalResults === 1 ? "" : "s"}`
+                      : "Show results"}
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </>
   );
 }

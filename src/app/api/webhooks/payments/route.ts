@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { clientErrorMessage } from "@/lib/api-error";
 import { ingestPaymentWebhook } from "@/modules/payments/services";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit, clientIpFrom } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,7 @@ export const dynamic = "force-dynamic";
  * adapter will plug into.
  */
 export async function POST(req: NextRequest) {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown-ip";
+  const ip = clientIpFrom(req.headers);
   const limit = checkRateLimit(`webhook_${ip}`, { windowMs: 60000, max: 120 });
   if (!limit.success) {
     return NextResponse.json({ error: "Too many requests" }, { status: 429 });
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest) {
     const result = await ingestPaymentWebhook(rawBody, req.headers.get("x-wizz-signature"));
     return NextResponse.json({ received: true, ...result });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Webhook processing failed";
+    const message = clientErrorMessage(err, "Webhook processing failed");
     if (message.startsWith("INVALID_WEBHOOK_SIGNATURE")) {
       return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
     }

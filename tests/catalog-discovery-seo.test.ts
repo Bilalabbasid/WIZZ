@@ -22,6 +22,10 @@ import { metadata as sellerMetadata } from "../src/app/(seller)/seller/layout";
 import { SITE_CONFIG } from "../src/lib/config";
 import { ProductStatus } from "@prisma/client";
 
+function robotsOf(meta: { robots?: unknown }): { index?: boolean; follow?: boolean } | undefined {
+  return meta.robots as { index?: boolean; follow?: boolean } | undefined;
+}
+
 let passCount = 0;
 let failCount = 0;
 
@@ -116,7 +120,7 @@ async function runCatalogDiscoveryAndSeoTests() {
     "Clean /products canonical points to self"
   );
   assert(
-    (cleanProductsMeta.robots as any)?.index === true,
+    robotsOf(cleanProductsMeta)?.index === true,
     "Clean /products page is indexable (robots: index: true)"
   );
 
@@ -125,11 +129,11 @@ async function runCatalogDiscoveryAndSeoTests() {
     searchParams: Promise.resolve({ brand: "wizz-audio", minPrice: "500" }),
   });
   assert(
-    (filteredProductsMeta1.robots as any)?.index === false,
+    robotsOf(filteredProductsMeta1)?.index === false,
     "Filtered /products page sets robots: { index: false } to prevent parameter bloat"
   );
   assert(
-    (filteredProductsMeta1.robots as any)?.follow === true,
+    robotsOf(filteredProductsMeta1)?.follow === true,
     "Filtered /products page keeps robots: { follow: true } for crawl equity"
   );
 
@@ -137,7 +141,7 @@ async function runCatalogDiscoveryAndSeoTests() {
     searchParams: Promise.resolve({ page: "3" }),
   });
   assert(
-    (paginatedProductsMeta.robots as any)?.index === false,
+    robotsOf(paginatedProductsMeta)?.index === false,
     "Deep paginated /products?page=3 sets robots: { index: false } to prevent duplicate indexation"
   );
 
@@ -148,23 +152,23 @@ async function runCatalogDiscoveryAndSeoTests() {
 
   const cleanCategoryMeta = await generateCategoryMetadata({
     params: Promise.resolve({ slug: testCategory.slug }),
-    searchParams: Promise.resolve({}) as any,
+    searchParams: Promise.resolve({}),
   });
   assert(
     cleanCategoryMeta.alternates?.canonical === `${SITE_CONFIG.canonicalUrl}/categories/${testCategory.slug}`,
     "Category page canonical points to clean category URL"
   );
   assert(
-    (cleanCategoryMeta.robots as any)?.index === true,
+    robotsOf(cleanCategoryMeta)?.index === true,
     "Clean category page is indexable"
   );
 
   const filteredCategoryMeta = await generateCategoryMetadata({
     params: Promise.resolve({ slug: testCategory.slug }),
-    searchParams: Promise.resolve({ inStock: "true", sort: "price_asc" }) as any,
+    searchParams: Promise.resolve({ inStock: "true", sort: "price_asc" }),
   });
   assert(
-    (filteredCategoryMeta.robots as any)?.index === false,
+    robotsOf(filteredCategoryMeta)?.index === false,
     "Faceted category filter combination sets robots: { index: false } to prevent spider traps"
   );
 
@@ -177,25 +181,25 @@ async function runCatalogDiscoveryAndSeoTests() {
     searchParams: Promise.resolve({ q: "ergonomic keyboard" }),
   });
   assert(
-    (searchMeta.robots as any)?.index === false,
+    robotsOf(searchMeta)?.index === false,
     "Internal search page sets robots: { index: false } to prevent Google Search Console penalty"
   );
   assert(
-    (searchMeta.robots as any)?.follow === true,
+    robotsOf(searchMeta)?.follow === true,
     "Internal search page sets robots: { follow: true } so link equity flows to products"
   );
 
-  assert((cartMetadata.robots as any)?.index === false, "Shopping cart (/cart) sets robots: { index: false }");
-  assert((cartMetadata.robots as any)?.follow === false, "Shopping cart (/cart) sets robots: { follow: false }");
+  assert(robotsOf(cartMetadata)?.index === false, "Shopping cart (/cart) sets robots: { index: false }");
+  assert(robotsOf(cartMetadata)?.follow === false, "Shopping cart (/cart) sets robots: { follow: false }");
 
-  assert((checkoutMetadata.robots as any)?.index === false, "Checkout page (/checkout) sets robots: { index: false }");
-  assert((checkoutMetadata.robots as any)?.follow === false, "Checkout page (/checkout) sets robots: { follow: false }");
+  assert(robotsOf(checkoutMetadata)?.index === false, "Checkout page (/checkout) sets robots: { index: false }");
+  assert(robotsOf(checkoutMetadata)?.follow === false, "Checkout page (/checkout) sets robots: { follow: false }");
 
-  assert((accountMetadata.robots as any)?.index === false, "Account dashboard sets robots: { index: false }");
-  assert((orderMetadata.robots as any)?.index === false, "Order confirmation receipt sets robots: { index: false }");
+  assert(robotsOf(accountMetadata)?.index === false, "Account dashboard sets robots: { index: false }");
+  assert(robotsOf(orderMetadata)?.index === false, "Order confirmation receipt sets robots: { index: false }");
 
-  assert((adminMetadata.robots as any)?.index === false, "Admin portal layout sets robots: { index: false }");
-  assert((sellerMetadata.robots as any)?.index === false, "Seller portal layout sets robots: { index: false }");
+  assert(robotsOf(adminMetadata)?.index === false, "Admin portal layout sets robots: { index: false }");
+  assert(robotsOf(sellerMetadata)?.index === false, "Seller portal layout sets robots: { index: false }");
 
   // ----------------------------------------------------------------------
   // 5. Catalog Discovery Service: Sorting, Filtering & Pagination
@@ -268,7 +272,7 @@ async function runCatalogDiscoveryAndSeoTests() {
     "Product metadata contains authoritative canonical URL"
   );
   assert(
-    (productMeta.robots as any)?.index === true,
+    robotsOf(productMeta)?.index === true,
     "Approved product is indexable"
   );
 

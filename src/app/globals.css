@@ -1,11 +1,45 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: var(--font-jakarta), system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  /* Pakistan-green brand band used by the storefront header */
-  --color-brand-ink: #013b23;
-  --color-brand-ink-deep: #012a19;
-  --color-brand-ink-soft: #0a5233;
+  --font-sans: var(--font-geist), "Geist", Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: var(--font-geist-mono), "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Brand = ink. Primary buttons are ink pills; the scale also gives warm neutrals
+     for soft fills and hairlines (reference design: Home / Listing artboards). */
+  --color-brand-50: #f5f5f2;
+  --color-brand-100: #eeeee9;
+  --color-brand-200: #deded8;
+  --color-brand-300: #bdbdb6;
+  --color-brand-400: #8a8a83;
+  --color-brand-500: #5f5f59;
+  --color-brand-600: #0e0e0d;
+  --color-brand-700: #2a2a27;
+  --color-brand-800: #1a1a18;
+  --color-brand-900: #0e0e0d;
+  --color-brand-950: #070706;
+  /* Ink surfaces (dark band, mobile dock, footer accents) */
+  --color-brand-ink: #0e0e0d;
+  --color-brand-ink-deep: #070706;
+  --color-brand-ink-soft: #2a2a27;
+
+  /* Canvas, lines and text tones */
+  --color-canvas: #f5f5f2;
+  --color-line: #deded8;
+  --color-line-soft: #e6e6e0;
+  --color-ink: #0e0e0d;
+  --color-ink-2: #3a3a37;
+  --color-mute: #5f5f59;
+  --color-mute-2: #8a8a83;
+  /* Photo placeholder tones */
+  --color-sand: #e4dfd6;
+
+  /* Volt: the single accent. Small badges, the logo dot, the Sell / cart dock button */
+  --color-volt: #d4ff3a;
+  --color-volt-soft: #ecffb0;
+  /* kept for older references to the logo accent */
+  --color-marigold-300: #ecffb0;
+  --color-marigold-400: #d4ff3a;
+  --color-marigold-500: #c2f020;
 }
 
 /* Hide scrollbars on horizontally scrolling rails while keeping them scrollable */
@@ -18,15 +52,15 @@
 
 @layer base {
   :root {
-    --background: #f1f4f2;
-    --foreground: #0f172a;
+    --background: #f5f5f2;
+    --foreground: #0e0e0d;
     --card: #ffffff;
     --card-foreground: #0f172a;
-    --primary: #059669;
-    --primary-hover: #047857;
+    --primary: #0e0e0d;
+    --primary-hover: #2a2a27;
     --accent: #ea580c;
-    --border: #e2e8f0;
-    --muted: #64748b;
+    --border: #deded8;
+    --muted: #5f5f59;
     --muted-bg: #f1f5f9;
   }
 
@@ -46,7 +80,7 @@
   }
 
   :focus-visible {
-    outline: 2px solid #059669;
+    outline: 2px solid #0e0e0d;
     outline-offset: 2px;
   }
 
@@ -66,12 +100,12 @@
 }
 
 .brand-accent-gradient {
-  background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+  background: #0e0e0d;
 }
 
 .retail-hero-mesh {
   background-color: #0f172a;
-  background-image: radial-gradient(at 0% 0%, rgba(5, 150, 105, 0.25) 0px, transparent 50%),
+  background-image: radial-gradient(at 0% 0%, rgba(212, 255, 58, 0.12) 0px, transparent 50%),
                     radial-gradient(at 100% 100%, rgba(30, 41, 59, 0.4) 0px, transparent 50%);
 }
 

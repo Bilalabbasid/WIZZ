@@ -3,10 +3,11 @@
 import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { formatAmount, formatCurrency, formatEstimatedDelivery } from "@/lib/formatters";
-import { RatingStars } from "./ui/rating";
-import { Store, ShieldCheck, Package, ShoppingCart, Check, Truck, Loader2 } from "lucide-react";
+import { formatCurrency } from "@/lib/formatters";
+import { Package, ShoppingCart, Check, Loader2, Star } from "lucide-react";
 import { SITE_CONFIG } from "@/lib/config";
+import { WishlistButton } from "./wishlist-button";
+import { FOCUS_RING, MONO_LABEL } from "./catalog-ui";
 
 export interface ProductCardProps {
   product: {
@@ -28,9 +29,26 @@ export interface ProductCardProps {
   };
   /** Use eager loading for cards rendered above the fold. */
   priority?: boolean;
+  /** Free-delivery threshold from admin commerce settings (passed by the server page). */
+  freeShippingThresholdMinor?: number;
 }
 
-export function ProductCard({ product, priority = false }: ProductCardProps) {
+const LOW_STOCK_UNITS = 10;
+
+function sellable(level?: { availableUnits: number; reservedUnits: number } | null) {
+  return level ? Math.max(0, level.availableUnits - level.reservedUnits) : 0;
+}
+
+function discountPercent(priceMinor: number, compareAtMinor?: number | null) {
+  if (!compareAtMinor || compareAtMinor <= priceMinor) return 0;
+  return Math.round(((compareAtMinor - priceMinor) / compareAtMinor) * 100);
+}
+
+export function ProductCard({
+  product,
+  priority = false,
+  freeShippingThresholdMinor = SITE_CONFIG.shipping.freeShippingThresholdMinor,
+}: ProductCardProps) {
   const router = useRouter();
   const [isAdding, setIsAdding] = useState<boolean>(false);
   const [justAdded, setJustAdded] = useState<boolean>(false);
@@ -45,23 +63,23 @@ export function ProductCard({ product, priority = false }: ProductCardProps) {
   }, []);
 
   const thumbnail = product.media.find((m) => m.isThumbnail) || product.media[0];
-  const lowestPriceMinor = Math.min(...product.variants.map((v) => v.priceMinor));
-  const compareAtMinor = product.variants.find((v) => v.compareAtPriceMinor)?.compareAtPriceMinor;
-  const hasDiscount = Boolean(compareAtMinor && compareAtMinor > lowestPriceMinor);
-  const discountPercent = hasDiscount
-    ? Math.round(((compareAtMinor! - lowestPriceMinor) / compareAtMinor!) * 100)
-    : 0;
+  const variants = product.variants;
+  const hasVariants = variants.length > 0;
+
+  // The variant shown on the card is the cheapest one; its own compare-at price is the only one struck through.
+  const shownVariant = hasVariants
+    ? variants.reduce((min, v) => (v.priceMinor < min.priceMinor ? v : min), variants[0])
+    : undefined;
+  const lowestPriceMinor = shownVariant?.priceMinor ?? 0;
+  const pricesDiffer = hasVariants && variants.some((v) => v.priceMinor !== lowestPriceMinor);
+  const shownDiscount = shownVariant ? discountPercent(shownVariant.priceMinor, shownVariant.compareAtPriceMinor) : 0;
+  const bestDiscount = variants.reduce((best, v) => Math.max(best, discountPercent(v.priceMinor, v.compareAtPriceMinor)), 0);
 
   // Live net sellable stock across variants
-  const totalStock = product.variants.reduce((sum, v) => {
-    const level = v.inventoryLevel;
-    if (!level) return sum;
-    return sum + Math.max(0, level.availableUnits - level.reservedUnits);
-  }, 0);
+  const totalStock = variants.reduce((sum, v) => sum + sellable(v.inventoryLevel), 0);
   const isOutOfStock = totalStock === 0;
-
-  const isWizzDirect = product.sellerOrg?.slug === "wizz-pk-direct";
-  const hasMultipleVariants = product.variants.length > 1;
+  const isLowStock = !isOutOfStock && totalStock <= LOW_STOCK_UNITS;
+  const hasMultipleVariants = variants.length > 1;
 
   // Genuine average rating, shown only when reviews exist
   const reviewCount = product.reviews?.length || 0;
@@ -70,8 +88,28 @@ export function ProductCard({ product, priority = false }: ProductCardProps) {
       ? Math.round((product.reviews!.reduce((acc, r) => acc + r.rating, 0) / reviewCount) * 10) / 10
       : null;
 
-  const isFreeDelivery = lowestPriceMinor >= SITE_CONFIG.shipping.freeShippingThresholdMinor;
+  const isFreeDelivery = hasVariants && !isOutOfStock && lowestPriceMinor >= freeShippingThresholdMinor;
   const productHref = `/products/${product.slug}`;
+  const sellerName = product.sellerOrg?.name ?? SITE_CONFIG.flagshipSellerName;
+
+  // One honest status tag: availability first, then a real price reduction, then stock level.
+  let tag: { text: string; label: string; highlight?: boolean };
+  if (!hasVariants) {
+    tag = { text: "Unavailable", label: "Currently unavailable" };
+  } else if (isOutOfStock) {
+    tag = { text: "Out of stock", label: "Out of stock" };
+  } else if (bestDiscount > 0) {
+    const upTo = shownDiscount !== bestDiscount;
+    tag = {
+      text: `${upTo ? "Up to " : ""}−${bestDiscount}%`,
+      label: `${upTo ? "Up to " : ""}${bestDiscount}% off`,
+      highlight: true,
+    };
+  } else if (isLowStock) {
+    tag = { text: "Low stock", label: `Low stock, ${totalStock} left` };
+  } else {
+    tag = { text: "In stock", label: "In stock" };
+  }
 
   const handleQuickAdd = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -83,7 +121,7 @@ export function ProductCard({ product, priority = false }: ProductCardProps) {
       return;
     }
 
-    const singleVariant = product.variants[0];
+    const singleVariant = variants[0];
     if (!singleVariant || isOutOfStock) return;
 
     setIsAdding(true);
@@ -108,74 +146,53 @@ export function ProductCard({ product, priority = false }: ProductCardProps) {
   };
 
   return (
-    <article className="group relative flex flex-col h-full bg-white rounded-lg border border-slate-200 hover:border-slate-300 hover:shadow-[0_6px_18px_-8px_rgba(15,23,42,0.18)] transition-[box-shadow,border-color] duration-200 overflow-hidden">
-      {/* Media */}
-      <div className="relative">
-        <Link
-          href={productHref}
-          className="relative block aspect-square w-full bg-slate-100 overflow-hidden"
-          tabIndex={-1}
-          aria-hidden="true"
-        >
-          {thumbnail?.url && !imgError ? (
-            <img
-              ref={imgRef}
-              src={thumbnail.url}
-              alt=""
-              width={360}
-              height={360}
-              className={`w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.04] ${
-                isOutOfStock ? "opacity-60 grayscale-[35%]" : ""
-              }`}
-              loading={priority ? "eager" : "lazy"}
-              decoding="async"
-              onError={() => setImgError(true)}
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-slate-300">
-              <Package size={40} strokeWidth={1.25} />
-            </div>
-          )}
+    <article className="group relative flex flex-col gap-3.5">
+      {/* Photo */}
+      <div className="relative aspect-[4/5] w-full overflow-hidden rounded-[20px] bg-sand">
+        {thumbnail?.url && !imgError ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            ref={imgRef}
+            src={thumbnail.url}
+            alt=""
+            width={400}
+            height={500}
+            className={`h-full w-full object-cover motion-safe:transition-[opacity,transform] motion-safe:duration-300 group-hover:opacity-90 motion-safe:group-hover:scale-[1.015] ${
+              isOutOfStock ? "opacity-55 grayscale-[30%]" : ""
+            }`}
+            loading={priority ? "eager" : "lazy"}
+            decoding="async"
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-mute-2" aria-hidden="true">
+            <Package size={40} strokeWidth={1.25} />
+          </div>
+        )}
 
-          {hasDiscount && (
-            <span className="absolute top-2 left-2 bg-rose-600 text-white font-extrabold text-[11px] leading-none px-1.5 py-1 rounded tabular-nums">
-              -{discountPercent}%
-            </span>
-          )}
+        {(isOutOfStock || !hasVariants) && (
+          <span className={`absolute bottom-3 left-3 rounded-full bg-ink px-2.5 py-1 text-white ${MONO_LABEL}`} aria-hidden="true">
+            {hasVariants ? "Out of stock" : "Unavailable"}
+          </span>
+        )}
 
-          {isOutOfStock ? (
-            <span className="absolute inset-x-0 bottom-0 bg-slate-900/80 text-white text-[11px] font-bold text-center py-1.5">
-              Out of stock
-            </span>
-          ) : (
-            totalStock <= 10 && (
-              <span className="absolute bottom-2 left-2 bg-amber-100 text-amber-900 font-bold text-[10px] px-1.5 py-0.5 rounded">
-                Only {totalStock} left
-              </span>
-            )
-          )}
-        </Link>
-        {/* Quick add (desktop hover / keyboard focus) */}
-        {!isOutOfStock && (
-          <div className="hidden sm:block absolute left-2 right-2 bottom-2 opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 focus-within:opacity-100 focus-within:translate-y-0 transition-[opacity,transform] duration-150">
+        {/* Quick add (pointer devices: hover or keyboard focus reveals it) */}
+        {!isOutOfStock && hasVariants && (
+          <div className="absolute inset-x-3 bottom-3 z-10 hidden opacity-0 group-hover:opacity-100 focus-within:opacity-100 motion-safe:transition-opacity motion-safe:duration-150 sm:block">
             <button
               type="button"
               onClick={handleQuickAdd}
               disabled={isAdding}
-              className={`w-full h-9 rounded-md text-xs font-bold flex items-center justify-center gap-1.5 transition-colors disabled:cursor-wait ${
-                justAdded
-                  ? "bg-emerald-700 text-white"
-                  : addError
-                  ? "bg-rose-600 text-white"
-                  : "bg-orange-600 hover:bg-orange-700 text-white"
+              className={`flex h-11 w-full items-center justify-center gap-2 rounded-full text-[13px] font-medium transition-colors disabled:cursor-wait ${FOCUS_RING} ${
+                addError ? "bg-rose-600 text-white" : justAdded ? "bg-ink text-white" : "bg-white/92 text-ink hover:bg-white"
               }`}
             >
               {isAdding ? (
-                <Loader2 size={14} className="animate-spin" />
+                <Loader2 size={15} className="motion-safe:animate-spin" aria-hidden="true" />
               ) : justAdded ? (
-                <Check size={14} />
+                <Check size={15} aria-hidden="true" />
               ) : (
-                <ShoppingCart size={14} />
+                <ShoppingCart size={15} aria-hidden="true" />
               )}
               <span aria-live="polite">
                 {isAdding
@@ -188,75 +205,74 @@ export function ProductCard({ product, priority = false }: ProductCardProps) {
                   ? "Choose options"
                   : "Add to cart"}
               </span>
+              <span className="sr-only">: {product.title}</span>
             </button>
           </div>
         )}
       </div>
 
+      <WishlistButton
+        productId={product.id}
+        productTitle={product.title}
+        className="absolute right-3 top-3 z-10"
+      />
+
       {/* Details */}
-      <div className="flex flex-col flex-1 p-2.5 sm:p-3 gap-1">
-        <Link href={productHref} className="block">
-          <h3 className="text-[13px] sm:text-sm font-medium text-slate-800 leading-snug line-clamp-2 min-h-[2.5em] group-hover:text-emerald-800 transition-colors">
-            {product.title}
+      <div className="flex flex-col gap-1.5 px-1">
+        {/* Title + price share a row once cards are wide enough; on 2-up phone grids the price drops below */}
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+          <h3 className="min-w-0 text-[15px] font-semibold leading-snug tracking-[-0.015em] text-ink">
+            {/* Stretched link: the whole card is clickable, the accessible name stays the title */}
+            <Link
+              href={productHref}
+              className="line-clamp-2 rounded-sm after:absolute after:inset-0 after:rounded-[20px] focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ink focus-visible:after:ring-offset-4 focus-visible:after:ring-offset-canvas"
+            >
+              {product.title}
+            </Link>
           </h3>
-        </Link>
-
-        {avgRating !== null && (
-          <div className="flex items-center gap-1">
-            <RatingStars rating={avgRating} size={12} />
-            <span className="text-[11px] text-slate-500 tabular-nums">({reviewCount})</span>
-          </div>
-        )}
-
-        {/* Price */}
-        <div className="mt-0.5">
-          <p className="flex items-baseline gap-0.5 text-slate-950 tabular-nums">
-            {hasMultipleVariants && <span className="text-[11px] text-slate-500 font-medium mr-0.5">From</span>}
-            <span className="text-[11px] font-bold">Rs.</span>
-            <span className="text-lg sm:text-xl font-extrabold tracking-tight leading-none">
-              {formatAmount(lowestPriceMinor)}
-            </span>
-          </p>
-          {hasDiscount && (
-            <p className="text-xs text-slate-500 tabular-nums mt-0.5">
-              <span className="line-through">{formatCurrency(compareAtMinor!)}</span>
-            </p>
-          )}
-        </div>
-
-        {/* Delivery & seller */}
-        <div className="mt-auto pt-1.5 space-y-1 text-[11px] sm:text-xs">
-          {!isOutOfStock && (
-            <p className="flex items-center gap-1 text-slate-600 truncate">
-              <Truck size={12} className="text-emerald-600 flex-shrink-0" />
-              {isFreeDelivery ? (
-                <span className="truncate">
-                  <strong className="font-bold text-emerald-700">Free delivery</strong>{" "}
-                  {formatEstimatedDelivery(isWizzDirect ? 2 : 3)}
-                </span>
-              ) : (
-                <span className="truncate">
-                  Delivery by <strong className="font-semibold text-slate-800">{formatEstimatedDelivery(isWizzDirect ? 2 : 3)}</strong>
+          {hasVariants ? (
+            <p className="shrink-0 font-mono text-[15px] font-medium leading-snug text-ink sm:text-right">
+              {pricesDiffer && <span className="mr-1 font-sans text-[11px] font-normal text-mute">From</span>}
+              <span className="whitespace-nowrap">{formatCurrency(lowestPriceMinor)}</span>
+              {shownDiscount > 0 && (
+                <span className="ml-2 inline-block whitespace-nowrap text-xs font-normal text-mute-2 line-through sm:ml-0 sm:block">
+                  <span className="sr-only">Was </span>
+                  {formatCurrency(shownVariant!.compareAtPriceMinor!)}
                 </span>
               )}
             </p>
-          )}
-          <p className="flex items-center gap-1 text-slate-500 truncate">
-            {isWizzDirect ? (
-              <>
-                <ShieldCheck size={12} className="text-emerald-600 flex-shrink-0" />
-                <span className="truncate font-semibold text-emerald-800">WIZZ Direct</span>
-              </>
-            ) : (
-              <>
-                <Store size={12} className="text-slate-400 flex-shrink-0" />
-                <span className="truncate">{product.sellerOrg?.name}</span>
-              </>
-            )}
-          </p>
+          ) : null}
         </div>
-      </div>
 
+        <div className="flex items-center justify-between gap-3 text-[13px] text-mute">
+          <span className="min-w-0 truncate">{sellerName}</span>
+          <span
+            className={`shrink-0 ${MONO_LABEL} ${
+              tag.highlight ? "rounded-full bg-volt px-2 py-0.5 text-ink" : isOutOfStock || !hasVariants ? "text-ink" : "text-mute"
+            }`}
+            aria-label={tag.label}
+          >
+            {tag.text}
+          </span>
+        </div>
+
+        {(avgRating !== null || isFreeDelivery) && (
+          <p className="flex flex-wrap items-center gap-x-2 text-xs text-mute">
+            {avgRating !== null && (
+              <span className="inline-flex items-center gap-1">
+                <Star size={12} className="fill-ink text-ink" aria-hidden="true" />
+                <span className="font-mono text-ink">{avgRating.toFixed(1)}</span>
+                <span>
+                  ({reviewCount}
+                  <span className="sr-only"> review{reviewCount === 1 ? "" : "s"}</span>)
+                </span>
+              </span>
+            )}
+            {avgRating !== null && isFreeDelivery && <span aria-hidden="true">·</span>}
+            {isFreeDelivery && <span>Free delivery</span>}
+          </p>
+        )}
+      </div>
     </article>
   );
 }

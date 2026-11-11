@@ -264,7 +264,10 @@ export async function returnOrderStock(
 
 
 /**
- * Manual administrative or seller stock adjustment with full audit logging.
+ * Manual administrative stock adjustment with audit logging. Atomic: the delta is applied
+ * with a guarded increment, so a concurrent checkout commit is never overwritten and stock
+ * can't drop below the units currently held by open checkouts. The variant's real seller is
+ * used for the ledger (the caller's sellerOrgId must match it).
  */
 export async function adjustInventoryStock(
   variantId: string,
@@ -274,34 +277,48 @@ export async function adjustInventoryStock(
   reasonCode: InventoryAdjustmentReason,
   notes?: string
 ) {
+  if (!Number.isInteger(deltaUnits) || deltaUnits === 0 || Math.abs(deltaUnits) > 100000) {
+    throw new Error("VALIDATION: Enter a whole number of units to add or remove (not zero).");
+  }
+  if (!Object.values(InventoryAdjustmentReason).includes(reasonCode)) {
+    throw new Error("VALIDATION: Choose a reason for the adjustment.");
+  }
+
   return prisma.$transaction(async (tx) => {
-    const level = await tx.inventoryLevel.findUnique({
-      where: { variantId },
-    });
-
-    if (!level) {
-      throw new Error("Inventory record not found.");
+    const level = await tx.inventoryLevel.findUnique({ where: { variantId } });
+    if (!level) throw new Error("Inventory record not found.");
+    if (level.sellerOrgId !== sellerOrgId) {
+      throw new Error("VALIDATION: This variant belongs to a different seller.");
     }
 
-    const newBalance = level.availableUnits + deltaUnits;
-    if (newBalance < 0) {
-      throw new Error(`Cannot adjust stock below zero. Current available: ${level.availableUnits}`);
+    if (deltaUnits < 0) {
+      // Only succeeds if enough unheld stock remains at the moment of the update
+      const removed = await tx.$executeRaw`
+        UPDATE "InventoryLevel"
+        SET "availableUnits" = "availableUnits" + ${deltaUnits}, "updatedAt" = NOW()
+        WHERE "variantId" = ${variantId} AND "availableUnits" + ${deltaUnits} >= "reservedUnits"`;
+      if (removed === 0) {
+        throw new Error(
+          `VALIDATION: Cannot remove ${Math.abs(deltaUnits)} units: only ${Math.max(0, level.availableUnits - level.reservedUnits)} are not held by open checkouts.`
+        );
+      }
+    } else {
+      await tx.inventoryLevel.update({
+        where: { variantId },
+        data: { availableUnits: { increment: deltaUnits } },
+      });
     }
 
-    const updated = await tx.inventoryLevel.update({
-      where: { variantId },
-      data: { availableUnits: newBalance },
-    });
-
+    const updated = await tx.inventoryLevel.findUniqueOrThrow({ where: { variantId } });
     const adjustment = await tx.inventoryAdjustment.create({
       data: {
         variantId,
-        sellerOrgId,
+        sellerOrgId: level.sellerOrgId,
         actorUserId,
         deltaUnits,
-        balanceAfter: newBalance,
+        balanceAfter: updated.availableUnits,
         reasonCode,
-        notes,
+        notes: notes ? String(notes).slice(0, 500) : undefined,
       },
     });
 

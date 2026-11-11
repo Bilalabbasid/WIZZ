@@ -139,6 +139,21 @@ function variantFromServer(v: any): ProductVariantItem {
   };
 }
 
+interface ReferenceOption {
+  id: string;
+  name: string;
+}
+
+interface ServerMediaItem {
+  id?: string;
+  url: string;
+  altText?: string | null;
+  isThumbnail?: boolean | null;
+  displayOrder?: number | null;
+}
+
+type EditorTab = "general" | "images" | "variants" | "attributes" | "seo";
+
 const MAX_IMAGES = 12;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
@@ -147,8 +162,8 @@ export function SellerProductEditor({ initialProductId, createdNotice }: SellerP
   const router = useRouter();
 
   // Reference data
-  const [categories, setCategories] = useState<any[]>([]);
-  const [brands, setBrands] = useState<any[]>([]);
+  const [categories, setCategories] = useState<ReferenceOption[]>([]);
+  const [brands, setBrands] = useState<ReferenceOption[]>([]);
   const [canSell, setCanSell] = useState<boolean>(true);
 
   // Core product fields
@@ -186,7 +201,7 @@ export function SellerProductEditor({ initialProductId, createdNotice }: SellerP
   const [optionDefs, setOptionDefs] = useState<OptionDefinition[]>([
     { name: "Size", values: ["Standard"] },
   ]);
-  const [variants, setVariants] = useState<ProductVariantItem[]>([
+  const [variants, setVariants] = useState<ProductVariantItem[]>(() => [
     {
       title: "Standard",
       sku: `SKU-${Date.now().toString().slice(-6)}`,
@@ -211,7 +226,7 @@ export function SellerProductEditor({ initialProductId, createdNotice }: SellerP
   const [bulkDealEnd, setBulkDealEnd] = useState<string>("");
 
   // UI state
-  const [activeTab, setActiveTab] = useState<"general" | "images" | "variants" | "attributes" | "seo">("general");
+  const [activeTab, setActiveTab] = useState<EditorTab>("general");
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(Boolean(initialProductId));
   const [isSaving, setIsSaving] = useState(false);
@@ -284,7 +299,7 @@ export function SellerProductEditor({ initialProductId, createdNotice }: SellerP
           // Populate images
           if (p.media && p.media.length > 0) {
             setImages(
-              p.media.map((m: any, idx: number) => ({
+              p.media.map((m: ServerMediaItem, idx: number) => ({
                 id: m.id,
                 url: m.url,
                 altText: m.altText || p.title,
@@ -560,7 +575,7 @@ export function SellerProductEditor({ initialProductId, createdNotice }: SellerP
   const handleVariantChange = (
     index: number,
     field: keyof ProductVariantItem,
-    val: any
+    val: ProductVariantItem[keyof ProductVariantItem]
   ) => {
     const updated = [...variants];
     updated[index] = { ...updated[index], [field]: val };
@@ -848,7 +863,7 @@ export function SellerProductEditor({ initialProductId, createdNotice }: SellerP
   if (isLoading) {
     return (
       <div className="py-20 text-center space-y-4">
-        <RefreshCw className="animate-spin text-indigo-600 mx-auto" size={32} />
+        <RefreshCw className="animate-spin text-brand-600 mx-auto" size={32} />
         <p className="text-xs font-semibold text-slate-500">Loading product editor...</p>
       </div>
     );
@@ -1046,8 +1061,8 @@ export function SellerProductEditor({ initialProductId, createdNotice }: SellerP
 
       {/* Staged Revisions Banner for Published Products */}
       {hasPendingChanges && moderationStatus === "PENDING_REVIEW" && (
-        <div className="p-4 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-950 flex items-start gap-3 text-xs">
-          <HelpCircle size={16} className="text-indigo-600 shrink-0 mt-0.5" />
+        <div className="p-4 rounded-xl bg-brand-50 border border-brand-200 text-brand-950 flex items-start gap-3 text-xs">
+          <HelpCircle size={16} className="text-brand-600 shrink-0 mt-0.5" />
           <div className="space-y-1">
             <p className="font-bold">Content edits waiting for review</p>
             <p className="text-slate-600 leading-relaxed">
@@ -1072,7 +1087,7 @@ export function SellerProductEditor({ initialProductId, createdNotice }: SellerP
             <button
               key={tab.id}
               type="button"
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => setActiveTab(tab.id as EditorTab)}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all whitespace-nowrap ${
                 isActive
                   ? "bg-slate-900 text-white shadow-sm"
@@ -1139,7 +1154,7 @@ export function SellerProductEditor({ initialProductId, createdNotice }: SellerP
                     placeholder={"What it is and who it's for.\n\n## Key features\n- Feature one\n- Feature two\n\n## In the box\n- Item"}
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    className="w-full text-sm rounded-xl border border-slate-300 p-3 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-sans leading-relaxed"
+                    className="w-full text-sm rounded-xl border border-slate-300 p-3 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500 font-sans leading-relaxed"
                   />
                 )}
                 <div className="flex flex-wrap items-center justify-between gap-2 mt-1 text-[11px] text-slate-500">
@@ -1177,7 +1192,7 @@ export function SellerProductEditor({ initialProductId, createdNotice }: SellerP
                 <select
                   value={categoryId}
                   onChange={(e) => setCategoryId(e.target.value)}
-                  className="w-full text-xs rounded-xl border border-slate-300 p-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full text-xs rounded-xl border border-slate-300 p-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
                 >
                   <option value="">-- Select Category --</option>
                   {categories.map((c) => (
@@ -1193,7 +1208,7 @@ export function SellerProductEditor({ initialProductId, createdNotice }: SellerP
                 <select
                   value={brandId}
                   onChange={(e) => setBrandId(e.target.value)}
-                  className="w-full text-xs rounded-xl border border-slate-300 p-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full text-xs rounded-xl border border-slate-300 p-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
                 >
                   <option value="">-- Independent Merchant Brand --</option>
                   {brands.map((b) => (
@@ -1246,7 +1261,7 @@ export function SellerProductEditor({ initialProductId, createdNotice }: SellerP
                 placeholder="Or paste direct image URL (https://...)"
                 value={newImageUrl}
                 onChange={(e) => setNewImageUrl(e.target.value)}
-                className="flex-1 text-xs rounded-xl border border-slate-300 p-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+                className="flex-1 text-xs rounded-xl border border-slate-300 p-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"
               />
               <Button type="button" size="sm" onClick={handleAddImageUrl} variant="secondary">
                 <Plus size={14} />
@@ -1266,7 +1281,7 @@ export function SellerProductEditor({ initialProductId, createdNotice }: SellerP
                 setIsDraggingFiles(false);
                 if (e.dataTransfer.files?.length) void uploadFiles(e.dataTransfer.files);
               }}
-              className={`rounded-3xl transition-colors ${isDraggingFiles ? "ring-2 ring-emerald-500 bg-emerald-50/40" : ""}`}
+              className={`rounded-3xl transition-colors ${isDraggingFiles ? "ring-2 ring-brand-500 bg-brand-50/40" : ""}`}
             >
             {images.length === 0 ? (
               <div className="border-2 border-dashed border-slate-200 rounded-3xl p-12 text-center space-y-2">
@@ -1282,13 +1297,13 @@ export function SellerProductEditor({ initialProductId, createdNotice }: SellerP
                   <div
                     key={idx}
                     className={`bg-slate-50 rounded-2xl border p-3 space-y-3 relative transition-all ${
-                      img.isThumbnail ? "border-emerald-500 ring-2 ring-emerald-500/20" : "border-slate-200"
+                      img.isThumbnail ? "border-brand-500 ring-2 ring-brand-500/20" : "border-slate-200"
                     }`}
                   >
                     <div className="relative aspect-square rounded-xl overflow-hidden bg-white border border-slate-100 flex items-center justify-center">
                       <img src={img.url} alt={img.altText} className="object-cover w-full h-full" />
                       {img.isThumbnail && (
-                        <span className="absolute top-2 left-2 bg-emerald-600 text-white text-[10px] font-black uppercase px-2 py-0.5 rounded-md shadow-sm">
+                        <span className="absolute top-2 left-2 bg-brand-600 text-white text-[10px] font-black uppercase px-2 py-0.5 rounded-md shadow-sm">
                           Primary
                         </span>
                       )}
@@ -1300,7 +1315,7 @@ export function SellerProductEditor({ initialProductId, createdNotice }: SellerP
                         placeholder="Alt description for SEO"
                         value={img.altText}
                         onChange={(e) => handleUpdateImageAlt(idx, e.target.value)}
-                        className="w-full text-[11px] rounded-lg border border-slate-200 p-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        className="w-full text-[11px] rounded-lg border border-slate-200 p-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-brand-500"
                       />
                     </div>
 
@@ -1333,7 +1348,7 @@ export function SellerProductEditor({ initialProductId, createdNotice }: SellerP
                           <button
                             type="button"
                             onClick={() => handleSetPrimaryImage(idx)}
-                            className="text-[10px] font-bold text-slate-600 hover:text-emerald-700 px-1.5 py-0.5 rounded hover:bg-slate-200"
+                            className="text-[10px] font-bold text-slate-600 hover:text-brand-700 px-1.5 py-0.5 rounded hover:bg-slate-200"
                           >
                             Set Primary
                           </button>
@@ -1382,7 +1397,7 @@ export function SellerProductEditor({ initialProductId, createdNotice }: SellerP
                   type="button"
                   size="sm"
                   onClick={handleGenerateMatrix}
-                  className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white"
+                  className="text-xs bg-brand-600 hover:bg-brand-700 text-white"
                 >
                   <Sparkles size={13} />
                   <span>Generate Matrix</span>
@@ -1399,7 +1414,7 @@ export function SellerProductEditor({ initialProductId, createdNotice }: SellerP
                       placeholder="Option Name (e.g. Size)"
                       value={def.name}
                       onChange={(e) => handleOptionNameChange(idx, e.target.value)}
-                      className="text-xs font-bold text-slate-800 bg-transparent border-b border-transparent focus:border-indigo-500 focus:outline-none"
+                      className="text-xs font-bold text-slate-800 bg-transparent border-b border-transparent focus:border-brand-500 focus:outline-none"
                     />
                     {optionDefs.length > 1 && (
                       <button
@@ -1416,7 +1431,7 @@ export function SellerProductEditor({ initialProductId, createdNotice }: SellerP
                     placeholder="Comma-separated (S, M, L, XL)"
                     defaultValue={def.values.join(", ")}
                     onBlur={(e) => handleOptionValuesChange(idx, e.target.value)}
-                    className="w-full text-xs rounded-lg border border-slate-200 p-2 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="w-full text-xs rounded-lg border border-slate-200 p-2 bg-white focus:outline-none focus:ring-1 focus:ring-brand-500"
                   />
                 </div>
               ))}
@@ -1426,7 +1441,7 @@ export function SellerProductEditor({ initialProductId, createdNotice }: SellerP
           {/* Bulk Update Bar */}
           <div className="bg-slate-900 text-white p-4 rounded-2xl flex flex-wrap items-center justify-between gap-4 text-xs">
             <div className="flex items-center gap-2 font-bold">
-              <Boxes size={16} className="text-emerald-400" />
+              <Boxes size={16} className="text-brand-400" />
               <span>Bulk Action on All {variants.length} Variants:</span>
             </div>
 
@@ -1436,23 +1451,23 @@ export function SellerProductEditor({ initialProductId, createdNotice }: SellerP
                 placeholder="Set Price (PKR)"
                 value={bulkPrice}
                 onChange={(e) => setBulkPrice(e.target.value)}
-                className="w-32 text-xs rounded-xl border border-slate-700 bg-slate-800 text-white p-2 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                className="w-32 text-xs rounded-xl border border-slate-700 bg-slate-800 text-white p-2 focus:outline-none focus:ring-1 focus:ring-brand-400"
               />
               <input
                 type="number"
                 placeholder="Set Compare-At (PKR)"
                 value={bulkCompareAt}
                 onChange={(e) => setBulkCompareAt(e.target.value)}
-                className="w-36 text-xs rounded-xl border border-slate-700 bg-slate-800 text-white p-2 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                className="w-36 text-xs rounded-xl border border-slate-700 bg-slate-800 text-white p-2 focus:outline-none focus:ring-1 focus:ring-brand-400"
               />
               <input
                 type="number"
                 placeholder="Set Stock"
                 value={bulkStock}
                 onChange={(e) => setBulkStock(e.target.value)}
-                className="w-24 text-xs rounded-xl border border-slate-700 bg-slate-800 text-white p-2 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                className="w-24 text-xs rounded-xl border border-slate-700 bg-slate-800 text-white p-2 focus:outline-none focus:ring-1 focus:ring-brand-400"
               />
-              <Button type="button" size="sm" onClick={handleApplyBulk} className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold">
+              <Button type="button" size="sm" onClick={handleApplyBulk} className="bg-brand-500 hover:bg-brand-600 text-slate-950 font-bold">
                 Apply Bulk
               </Button>
             </div>
@@ -1767,14 +1782,14 @@ export function SellerProductEditor({ initialProductId, createdNotice }: SellerP
                   placeholder="Attribute name (e.g. Material)"
                   value={attr.key}
                   onChange={(e) => handleAttributeChange(idx, e.target.value, attr.value)}
-                  className="w-1/3 text-xs rounded-xl border border-slate-300 p-2.5 bg-white font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-1/3 text-xs rounded-xl border border-slate-300 p-2.5 bg-white font-semibold focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
                 <input
                   type="text"
                   placeholder="Attribute value (e.g. 100% Genuine Leather)"
                   value={attr.value}
                   onChange={(e) => handleAttributeChange(idx, attr.key, e.target.value)}
-                  className="flex-1 text-xs rounded-xl border border-slate-300 p-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="flex-1 text-xs rounded-xl border border-slate-300 p-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
                 <button
                   type="button"
@@ -1809,7 +1824,7 @@ export function SellerProductEditor({ initialProductId, createdNotice }: SellerP
                 placeholder={title || "Title for search engines..."}
                 value={metaTitle}
                 onChange={(e) => setMetaTitle(e.target.value)}
-                className="w-full text-xs rounded-xl border border-slate-300 p-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                className="w-full text-xs rounded-xl border border-slate-300 p-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
               />
             </div>
 
@@ -1825,7 +1840,7 @@ export function SellerProductEditor({ initialProductId, createdNotice }: SellerP
                 placeholder={description.slice(0, 150) || "Description for search engine snippets..."}
                 value={metaDescription}
                 onChange={(e) => setMetaDescription(e.target.value)}
-                className="w-full text-xs rounded-xl border border-slate-300 p-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-sans"
+                className="w-full text-xs rounded-xl border border-slate-300 p-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500 font-sans"
               />
             </div>
 
@@ -1960,7 +1975,7 @@ export function SellerProductEditor({ initialProductId, createdNotice }: SellerP
                   )}
 
                   <div className="pt-2">
-                    <Button size="lg" className="w-full shadow-lg shadow-emerald-600/20" disabled>
+                    <Button size="lg" className="w-full shadow-lg shadow-brand-600/20" disabled>
                       <span>Add to Bag (Preview Only)</span>
                     </Button>
                   </div>

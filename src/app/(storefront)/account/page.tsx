@@ -1,155 +1,230 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
-import { getUserOrders } from "@/modules/orders/services";
 import { prisma } from "@/lib/db";
 import { formatCurrency, formatDateTime } from "@/lib/formatters";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { AccountAddressBook } from "@/components/account-address-book";
+import { AccountProfileForm } from "@/components/account-profile-form";
+import { AccountPasswordForm } from "@/components/account-password-form";
+import { AccountSignOutButton } from "@/components/account-sign-out-button";
 import Link from "next/link";
 import type { Metadata } from "next";
-import {
-  User as UserIcon,
-  Package,
-  MapPin,
-  LogOut,
-  ChevronRight,
-  ShieldCheck,
-  Plus,
-} from "lucide-react";
+import { Package, ChevronRight, ChevronLeft, Heart } from "lucide-react";
 
 export const metadata: Metadata = {
-  title: "Account Dashboard | WIZZ.PK",
+  title: "Your account",
   robots: { index: false, follow: false },
 };
 
-export default async function AccountPage() {
+const ORDERS_PER_PAGE = 10;
+
+function parsePage(raw: string | string[] | undefined): number {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  const n = Number.parseInt(value ?? "1", 10);
+  return Number.isFinite(n) && n >= 1 ? Math.min(n, 10_000) : 1;
+}
+
+function statusLabel(status: string) {
+  return status.replace(/_/g, " ");
+}
+
+export default async function AccountPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string | string[] }>;
+}) {
   const user = await getCurrentUser();
 
   if (!user) {
     redirect("/login?next=/account");
   }
 
-  const [orders, addresses] = await Promise.all([
-    getUserOrders(user.id),
+  const requestedPage = parsePage((await searchParams).page);
+
+  const [totalOrders, addresses, wishlistCount] = await Promise.all([
+    prisma.customerOrder.count({ where: { customerUserId: user.id } }),
     prisma.address.findMany({
       where: { userId: user.id },
-      orderBy: { isDefaultShipping: "desc" },
+      orderBy: [{ isDefaultShipping: "desc" }, { createdAt: "desc" }],
     }),
+    prisma.wishlistItem.count({ where: { userId: user.id } }),
   ]);
 
+  const totalPages = Math.max(1, Math.ceil(totalOrders / ORDERS_PER_PAGE));
+  const page = Math.min(requestedPage, totalPages);
+
+  const orders = await prisma.customerOrder.findMany({
+    where: { customerUserId: user.id },
+    orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+    skip: (page - 1) * ORDERS_PER_PAGE,
+    take: ORDERS_PER_PAGE,
+    select: {
+      id: true,
+      orderNumber: true,
+      createdAt: true,
+      status: true,
+      totalMinor: true,
+      sellerOrders: { select: { id: true, _count: { select: { items: true } } } },
+    },
+  });
+
+  const firstShown = totalOrders === 0 ? 0 : (page - 1) * ORDERS_PER_PAGE + 1;
+  const lastShown = Math.min(page * ORDERS_PER_PAGE, totalOrders);
+  const pageHref = (p: number) => (p <= 1 ? "/account#orders" : `/account?page=${p}#orders`);
+
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-10">
+    <div className="mx-auto w-full max-w-[1360px] px-5 sm:px-10 py-8 sm:py-10 space-y-10">
       {/* Account Header */}
-      <div className="bg-white rounded-3xl border border-slate-200 p-7 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 shadow-xs">
-        <div className="flex items-center gap-4">
-          <div className="w-16 h-16 rounded-2xl bg-emerald-600 text-white font-extrabold text-2xl flex items-center justify-center shadow-xs">
+      <div className="bg-white rounded-[28px] border border-line p-6 sm:p-7 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 shadow-xs">
+        <div className="flex items-center gap-4 min-w-0">
+          <div
+            className="w-16 h-16 shrink-0 rounded-[20px] bg-brand-600 text-white font-semibold text-2xl flex items-center justify-center shadow-xs"
+            aria-hidden="true"
+          >
             {user.firstName[0]}
             {user.lastName[0]}
           </div>
-          <div>
-            <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-semibold text-ink tracking-tight break-words">
               {user.firstName} {user.lastName}
             </h1>
-            <p className="text-xs text-slate-500 mt-0.5">{user.email}</p>
-            <div className="flex items-center gap-2 mt-2">
-              <Badge variant="neutral" size="sm">
-                Role: {user.role.replace("PLATFORM_", "")}
-              </Badge>
-              {user.isEmailVerified && (
+            <p className="text-xs text-mute mt-0.5 break-all">{user.email}</p>
+            {user.isEmailVerified && (
+              <div className="flex items-center gap-2 mt-2">
                 <Badge variant="success" size="sm">
-                  Verified Account
+                  Verified email
                 </Badge>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <form action="/api/auth/logout" method="POST">
-            <Button variant="outline" size="sm" type="submit" className="text-slate-600 hover:text-rose-600">
-              <LogOut size={15} />
-              <span>Sign Out</span>
-            </Button>
-          </form>
+        <div className="flex flex-wrap items-center gap-3">
+          <Link
+            href="/wishlist"
+            className="inline-flex min-h-[44px] items-center gap-2 rounded-lg border border-line bg-white px-4 text-sm font-medium text-ink-2 hover:bg-canvas focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
+          >
+            <Heart size={15} className="text-rose-500" aria-hidden="true" />
+            <span>Wishlist</span>
+            {wishlistCount > 0 && (
+              <span className="rounded-full bg-canvas px-2 py-0.5 text-[11px] font-bold text-ink-2">
+                {wishlistCount}
+              </span>
+            )}
+          </Link>
+          <AccountSignOutButton />
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left Column: Order History (2 cols) */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-              <Package size={20} className="text-emerald-600" />
+        <section id="orders" aria-labelledby="orders-heading" className="lg:col-span-2 space-y-6 scroll-mt-24">
+          <div className="flex items-center justify-between gap-3">
+            <h2 id="orders-heading" className="text-xl font-bold text-ink flex items-center gap-2">
+              <Package size={20} className="text-brand-600" aria-hidden="true" />
               <span>Order History</span>
             </h2>
-            <span className="text-xs text-slate-500 font-medium">
-              {orders.length} total purchase{orders.length === 1 ? "" : "s"}
+            <span className="text-xs text-mute font-medium">
+              {totalOrders === 0
+                ? "No orders yet"
+                : `Showing ${firstShown}–${lastShown} of ${totalOrders} order${totalOrders === 1 ? "" : "s"}`}
             </span>
           </div>
 
           {orders.length === 0 ? (
-            <div className="p-8 rounded-2xl bg-white border border-slate-200 text-center space-y-3">
-              <p className="text-sm text-slate-500">You haven't placed any orders yet.</p>
-              <Link href="/products" className="inline-block">
-                <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold">
-                  Explore Products
-                </Button>
+            <div className="p-8 rounded-[20px] bg-white border border-line text-center space-y-3">
+              <p className="text-sm text-mute">You haven&apos;t placed any orders yet.</p>
+              <Link
+                href="/products"
+                className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-brand-600 px-4 text-sm font-bold text-white hover:bg-brand-700"
+              >
+                Explore products
               </Link>
             </div>
           ) : (
-            <div className="space-y-4">
-              {orders.map((o) => (
-                <Link
-                  key={o.id}
-                  href={`/orders/${o.id}`}
-                  className="block p-5 rounded-2xl bg-white border border-slate-200 hover:border-emerald-300 hover:shadow-xs transition-all"
-                >
-                  <div className="flex items-start justify-between gap-4 pb-3 border-b border-slate-100">
-                    <div>
-                      <span className="font-extrabold text-sm text-slate-900">
-                        {o.orderNumber}
-                      </span>
-                      <p className="text-[11px] text-slate-400 mt-0.5">
-                        {formatDateTime(o.createdAt)}
-                      </p>
-                    </div>
+            <ul className="space-y-4">
+              {orders.map((o) => {
+                const itemCount = o.sellerOrders.reduce((sum, so) => sum + so._count.items, 0);
+                return (
+                  <li key={o.id}>
+                    <Link
+                      href={`/orders/${o.id}`}
+                      className="block p-5 rounded-[20px] bg-white border border-line hover:border-brand-300 hover:shadow-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                    >
+                      <div className="flex items-start justify-between gap-4 pb-3 border-b border-line-soft">
+                        <div>
+                          <span className="font-semibold text-sm text-ink">{o.orderNumber}</span>
+                          <p className="text-[11px] text-mute-2 mt-0.5">{formatDateTime(o.createdAt)}</p>
+                        </div>
 
-                    <div className="flex items-center gap-2">
-                      <Badge
-                        variant={
-                          o.status === "DELIVERED"
-                            ? "success"
-                            : o.status === "CANCELLED"
-                            ? "danger"
-                            : "default"
-                        }
-                        size="sm"
-                      >
-                        {o.status.replace("_", " ")}
-                      </Badge>
-                      <ChevronRight size={16} className="text-slate-400" />
-                    </div>
-                  </div>
+                        <div className="flex items-center gap-2">
+                          <Badge
+                            variant={
+                              o.status === "DELIVERED" ? "success" : o.status === "CANCELLED" ? "danger" : "default"
+                            }
+                            size="sm"
+                          >
+                            {statusLabel(o.status)}
+                          </Badge>
+                          <ChevronRight size={16} className="text-mute-2" aria-hidden="true" />
+                        </div>
+                      </div>
 
-                  <div className="pt-3 flex items-center justify-between text-xs">
-                    <span className="text-slate-500">
-                      {o.sellerOrders.reduce((sum, so) => sum + so.items.length, 0)} item(s) across{" "}
-                      {o.sellerOrders.length} package(s)
-                    </span>
-                    <span className="font-black text-sm text-emerald-700">
-                      {formatCurrency(o.totalMinor)}
-                    </span>
-                  </div>
-                </Link>
-              ))}
-            </div>
+                      <div className="pt-3 flex items-center justify-between text-xs">
+                        <span className="text-mute">
+                          {itemCount} item{itemCount === 1 ? "" : "s"} in {o.sellerOrders.length} package
+                          {o.sellerOrders.length === 1 ? "" : "s"}
+                        </span>
+                        <span className="font-semibold text-sm text-brand-700">{formatCurrency(o.totalMinor)}</span>
+                      </div>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
           )}
-        </div>
 
-        {/* Right Column: Address Book (1 col) */}
-        <div>
+          {totalPages > 1 && (
+            <nav aria-label="Order history pages" className="flex items-center justify-between gap-3">
+              {page > 1 ? (
+                <Link
+                  href={pageHref(page - 1)}
+                  className="inline-flex min-h-[44px] items-center gap-1 rounded-lg border border-line bg-white px-4 text-sm font-medium text-ink-2 hover:bg-canvas"
+                >
+                  <ChevronLeft size={16} aria-hidden="true" />
+                  <span>Newer</span>
+                </Link>
+              ) : (
+                <span />
+              )}
+              <span className="text-xs text-mute" aria-current="page">
+                Page {page} of {totalPages}
+              </span>
+              {page < totalPages ? (
+                <Link
+                  href={pageHref(page + 1)}
+                  className="inline-flex min-h-[44px] items-center gap-1 rounded-lg border border-line bg-white px-4 text-sm font-medium text-ink-2 hover:bg-canvas"
+                >
+                  <span>Older</span>
+                  <ChevronRight size={16} aria-hidden="true" />
+                </Link>
+              ) : (
+                <span />
+              )}
+            </nav>
+          )}
+        </section>
+
+        {/* Right Column: profile, password, address book */}
+        <div className="space-y-8">
+          <AccountProfileForm
+            initialFirstName={user.firstName}
+            initialLastName={user.lastName}
+            initialPhone={user.phone ?? ""}
+            email={user.email}
+          />
           <AccountAddressBook initialAddresses={addresses} />
+          <AccountPasswordForm />
         </div>
       </div>
     </div>

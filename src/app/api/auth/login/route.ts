@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { clientErrorMessage } from "@/lib/api-error";
 import { prisma } from "@/lib/db";
 import { verifyPassword, createSessionToken } from "@/lib/auth";
 import { SITE_CONFIG } from "@/lib/config";
 import { cookies } from "next/headers";
 import { claimGuestCart } from "@/lib/cart-session";
-import { checkRateLimit, resetRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit, resetRateLimit, clientIpFrom } from "@/lib/rate-limit";
 
 export async function POST(req: NextRequest) {
   try {
@@ -15,10 +16,18 @@ export async function POST(req: NextRequest) {
     }
 
     const cleanEmail = email.toLowerCase().trim();
-    const clientIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown-ip";
+    const clientIp = clientIpFrom(req.headers);
     const rateLimitKey = `login_${clientIp}_${cleanEmail}`;
 
     const limitResult = checkRateLimit(rateLimitKey, { windowMs: 60000, max: 5 });
+    // Per-account limit across all IPs (slows distributed password guessing)
+    const accountLimit = checkRateLimit(`login_account_${cleanEmail}`, { windowMs: 600000, max: 20 });
+    if (!accountLimit.success) {
+      return NextResponse.json(
+        { error: "Too many sign-in attempts for this account. Please wait 10 minutes and try again." },
+        { status: 429, headers: { "Retry-After": Math.ceil(accountLimit.resetMs / 1000).toString() } }
+      );
+    }
     if (!limitResult.success) {
       return NextResponse.json(
         { error: "Too many login attempts. Please wait a minute before trying again." },
@@ -74,7 +83,7 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Error during authentication";
+    const message = clientErrorMessage(err, "Error during authentication");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

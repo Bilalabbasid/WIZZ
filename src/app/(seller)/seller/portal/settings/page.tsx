@@ -6,13 +6,19 @@ import { Settings, ShieldCheck, Clock, FileText, CheckCircle2, UserCheck, Refres
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
-export default function SellerSettingsPage() {
-  const [logs, setLogs] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+interface SellerAuditLog {
+  id: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  detailsJson: string;
+  createdAt: string;
+  actorUser?: { firstName: string; email: string } | null;
+}
 
-  useEffect(() => {
-    loadAudit();
-  }, []);
+export default function SellerSettingsPage() {
+  const [logs, setLogs] = useState<SellerAuditLog[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   const loadAudit = async () => {
     setIsLoading(true);
@@ -28,6 +34,10 @@ export default function SellerSettingsPage() {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    void Promise.resolve().then(loadAudit);
+  }, []);
 
   return (
     <div className="max-w-4xl mx-auto space-y-8">
@@ -58,7 +68,7 @@ export default function SellerSettingsPage() {
           <div className="pt-2">
             <Link
               href="/seller/portal/profile"
-              className="text-xs font-bold text-indigo-600 hover:underline"
+              className="text-xs font-bold text-brand-600 hover:underline"
             >
               Manage Store Profile &rarr;
             </Link>
@@ -73,7 +83,7 @@ export default function SellerSettingsPage() {
           <div className="pt-2">
             <Link
               href="/seller/onboarding"
-              className="text-xs font-bold text-indigo-600 hover:underline"
+              className="text-xs font-bold text-brand-600 hover:underline"
             >
               Open Onboarding Workspace &rarr;
             </Link>
@@ -85,7 +95,7 @@ export default function SellerSettingsPage() {
       <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden">
         <div className="p-6 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <ShieldCheck size={18} className="text-indigo-600" />
+            <ShieldCheck size={18} className="text-brand-600" />
             <h2 className="text-sm font-bold text-slate-900">Organization Audit Trail</h2>
           </div>
           <span className="text-xs text-slate-400">Strictly Scoped & Immutable</span>
@@ -101,7 +111,7 @@ export default function SellerSettingsPage() {
         ) : (
           <div className="divide-y divide-slate-100 text-xs">
             {logs.map((log) => {
-              let details: any = {};
+              let details: unknown = {};
               try {
                 details = JSON.parse(log.detailsJson);
               } catch {

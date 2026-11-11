@@ -5,12 +5,31 @@
 
 ---
 
+## 0. Current brand (November 2026 rebrand)
+
+The owner asked to move away from the green identity toward a more modern marketplace look.
+These tokens replace every emerald brand use; older sections below are kept for history.
+
+| Token | Value | Use |
+| :--- | :--- | :--- |
+| `brand-600` | `#3A47E0` | Primary buttons, links, active tabs, focus ring (6.3:1 on white) |
+| `brand-700` | `#2E37C2` | Hover / pressed |
+| `brand-50`–`200` | `#EEF1FF`–`#C6CEFF` | Selected rows, chips, soft backgrounds |
+| `brand-ink` | `#151A4F` | Header band, footer (`brand-ink-deep` `#0F1340`) |
+| `marigold-400` | `#FFC24D` | Logo bolt and `.PK` on dark only |
+| `orange-600` | `#EA580C` | Single commerce CTA (search button, Add to cart), cart badge |
+| `rose-600` | `#E11D48` | Discounts and Deals only |
+| `emerald-*` | Tailwind | Status only: success, in stock, delivered, paid. Never brand. |
+
+Seller Center and the admin console use the same cobalt (they previously used indigo), so the
+whole product reads as one brand. Tokens live in `src/app/globals.css` (`@theme`).
+
 ## 1. Visual Direction Exploration
 
 To ensure WIZZ.PK avoids generic AI/SaaS-style defaults (oversized heroes, pastel blobs, identical rounded cards, and repeating 3-icon blocks), three distinct visual directions tailored for a high-trust commerce marketplace were developed and evaluated:
 
 ### Direction 1: "Raw Commercial / High-Street Modernist" (RECOMMENDED & SELECTED)
-- **Concept**: A high-utility, high-clarity retail identity built for serious merchandise discovery, rapid conversion, and dense product inspection. Clean white/pearl canvas with deep charcoal contrasts and high-energy emerald/volt functional accents.
+- **Concept**: A high-utility, high-clarity retail identity built for serious merchandise discovery, rapid conversion, and dense product inspection. Clean white canvas, deep-ink header band and cobalt functional accents (rebranded from emerald in Nov 2026, see section 0).
 - **Typography**:
   - Primary UI & Data: `Plus Jakarta Sans` — punchy geometric grotesque with high legibility at micro-sizes, wide aperture, and clean tabular figures for PKR prices.
   - Display/Headings: `Plus Jakarta Sans` (Extrabold 800/900) for authoritative retail hierarchy.
@@ -18,7 +37,7 @@ To ensure WIZZ.PK avoids generic AI/SaaS-style defaults (oversized heroes, paste
   - Base Background: `#F8FAFC` (Canvas), `#FFFFFF` (Surface Cards)
   - Primary Text: `#0F172A` (Slate 900)
   - Muted Text: `#64748B` (Slate 500)
-  - Brand Primary / Action: `#059669` (Emerald 600) with `#047857` (Hover)
+  - Brand Primary / Action: `#3A47E0` (brand-600, cobalt) with `#2E37C2` (brand-700, hover)
   - Accent / Urgency: `#EA580C` (Amber/Orange 600) for sale badges and low-stock indicators
   - Border System: `#E2E8F0` (Slate 200) with refined 1px strokes
 - **Product-Image Treatment**:
@@ -66,8 +85,8 @@ To ensure WIZZ.PK avoids generic AI/SaaS-style defaults (oversized heroes, paste
   --text-inverse: #ffffff;
 
   /* Brand & Status Colors */
-  --brand-primary: #059669;       /* WIZZ Emerald */
-  --brand-primary-hover: #047857;
+  --brand-primary: #3a47e0;       /* WIZZ Cobalt (brand-600) */
+  --brand-primary-hover: #2e37c2;
   --brand-accent: #ea580c;        /* Promotional / Urgency */
   --status-success: #10b981;
   --status-warning: #f59e0b;
@@ -114,7 +133,7 @@ To ensure WIZZ.PK avoids generic AI/SaaS-style defaults (oversized heroes, paste
 ### 3.3 Forms & Inputs
 - Visible, persistent floating or upper labels (`text-xs font-bold text-slate-700`).
 - Inline error messages adjacent to the erroneous input with `aria-live="polite"` and clear remediation instructions.
-- Visible focus rings with high contrast (`focus:ring-2 focus:ring-emerald-500 focus:outline-none`).
+- Visible focus rings with high contrast (`focus:ring-2 focus:ring-brand-500 focus:outline-none`).
 
 ---
 
@@ -124,7 +143,7 @@ To ensure WIZZ.PK avoids generic AI/SaaS-style defaults (oversized heroes, paste
 
 ### 4.0 Storefront Polish Revision (2026-10-25)
 Supersedes the header colours and homepage composition below where they differ.
-- **Brand band**: the header's main bar uses Pakistan green `--color-brand-ink: #013b23` (utility strip `#012a19`, hover `#0a5233`), white logotype, white search field and an orange-600 search button. Orange is the single action accent in the header and for "Add to cart"; rose-600 stays reserved for discount badges and Deals.
+- **Brand band**: the header's main bar uses deep ink `--color-brand-ink: #151a4f` (utility strip `#0f1340`, hover `#232a73`), white logotype, white search field and an orange-600 search button. Orange is the single action accent in the header and for "Add to cart"; rose-600 stays reserved for discount badges and Deals.
 - **Canvas**: `--background: #f1f4f2`, so white section panels (`rounded-lg`, 1px slate-200 border, no shadow) separate clearly, as on marketplace homepages.
 - **Fonts**: Plus Jakarta Sans loaded through `next/font/google` (self-hosted, no render-blocking CSS import).
 - **Homepage**: hero row = category rail (lg+) | carousel of real marked-down products (biggest genuine discount first, pause control, honours reduced motion) | account, active-coupon and service panel (xl+). A coupon shows only when an active, in-date, under-limit `Coupon` row exists. Then Deals rail, image category tiles, Top picks grid (2/3/4/6 cols), New arrivals rail. The duplicate trust strip was removed; the footer carries it.
@@ -169,7 +188,7 @@ Supersedes the header colours and homepage composition below where they differ.
   - City delivery estimation ("Deliver to [City] • Standard delivery 2–4 days via TCS / Leopards").
   - Stock availability state (In Stock, Low Stock urgency when ≤ 10, Out of Stock).
   - Quantity selector up to available units.
-  - Primary "Add to Cart" button (solid emerald).
+  - Primary "Add to Cart" button (solid orange-600; cobalt for secondary actions).
   - Secondary "Buy Now" button (slate-900, adds to cart and redirects straight to checkout).
   - Ships from & Sold by metadata (WIZZ.PK Direct vs External Seller).
   - 15-Minute transactional stock reservation guarantee badge.

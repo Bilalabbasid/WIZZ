@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { clientErrorMessage, clientErrorStatus } from "@/lib/api-error";
 import { getCurrentUser } from "@/lib/auth";
 import { getSellerContextForUser } from "@/modules/sellers/services";
 
@@ -12,7 +13,7 @@ export async function GET() {
     const context = await getSellerContextForUser(user.id);
     return NextResponse.json({ success: true, context });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Error getting seller context";
-    return NextResponse.json({ error: message }, { status: 400 });
+    const message = clientErrorMessage(err, "Error getting seller context");
+    return NextResponse.json({ error: message }, { status: clientErrorStatus(err) });
   }
 }

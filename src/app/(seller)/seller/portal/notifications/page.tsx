@@ -5,13 +5,19 @@ import Link from "next/link";
 import { Bell, CheckCircle2, Clock, AlertTriangle, PackageOpen, RefreshCw, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-export default function SellerNotificationsPage() {
-  const [notifications, setNotifications] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+interface SellerNotification {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  isRead: boolean;
+  linkUrl?: string | null;
+  createdAt: string;
+}
 
-  useEffect(() => {
-    loadNotifications();
-  }, []);
+export default function SellerNotificationsPage() {
+  const [notifications, setNotifications] = useState<SellerNotification[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   const loadNotifications = async () => {
     setIsLoading(true);
@@ -28,13 +34,18 @@ export default function SellerNotificationsPage() {
     }
   };
 
+  useEffect(() => {
+    void Promise.resolve().then(loadNotifications);
+  }, []);
+
   const handleMarkRead = async (id: string) => {
     try {
-      await fetch("/api/seller/notifications", {
+      const res = await fetch("/api/seller/notifications", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ notificationId: id }),
       });
+      if (!res.ok) return; // leave it unread so the seller can retry
       setNotifications(
         notifications.map((n) => (n.id === id ? { ...n, isRead: true } : n))
       );
@@ -68,21 +79,21 @@ export default function SellerNotificationsPage() {
         ) : notifications.length === 0 ? (
           <div className="p-12 text-center space-y-2">
             <Bell size={32} className="mx-auto text-slate-300" />
-            <p className="text-xs text-slate-500">You're all caught up! No notifications.</p>
+            <p className="text-xs text-slate-500">You&apos;re all caught up! No notifications.</p>
           </div>
         ) : (
           notifications.map((n) => (
             <div
               key={n.id}
               className={`p-6 flex items-start justify-between gap-4 transition ${
-                n.isRead ? "bg-white opacity-80" : "bg-indigo-50/20"
+                n.isRead ? "bg-white opacity-80" : "bg-brand-50/20"
               }`}
             >
               <div className="flex items-start gap-3">
                 <div
                   className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
                     n.type === "APPLICATION"
-                      ? "bg-indigo-50 text-indigo-600"
+                      ? "bg-brand-50 text-brand-600"
                       : n.type === "INVENTORY"
                       ? "bg-amber-50 text-amber-600"
                       : "bg-emerald-50 text-emerald-600"
@@ -95,7 +106,7 @@ export default function SellerNotificationsPage() {
                   <div className="flex items-center gap-2">
                     <h2 className="text-sm font-bold text-slate-900">{n.title}</h2>
                     {!n.isRead && (
-                      <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
+                      <span className="w-2 h-2 rounded-full bg-brand-600"></span>
                     )}
                   </div>
                   <p className="text-xs text-slate-600 leading-relaxed">{n.message}</p>
@@ -104,7 +115,7 @@ export default function SellerNotificationsPage() {
                     {n.linkUrl && (
                       <Link
                         href={n.linkUrl}
-                        className="font-bold text-indigo-600 hover:underline flex items-center gap-0.5"
+                        className="font-bold text-brand-600 hover:underline flex items-center gap-0.5"
                       >
                         <span>View Details</span>
                         <ExternalLink size={10} />

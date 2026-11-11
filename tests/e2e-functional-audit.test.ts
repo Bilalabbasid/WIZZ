@@ -21,7 +21,7 @@ import {
 import {
   createReturnRequest,
   reviewReturnRequest,
-  processReturnRestockAndRefund,
+  transitionReturnRequest,
 } from "../src/modules/returns/services";
 import {
   registerSellerAccount,
@@ -39,7 +39,7 @@ import {
   updateSellerOrderStatus,
 } from "../src/modules/sellers/order-services";
 import { adjustInventoryStock } from "../src/modules/inventory/services";
-import { createShipment } from "../src/modules/fulfillment/services";
+import { createShipment, addShipmentMilestone } from "../src/modules/fulfillment/services";
 import { hashPassword, createSessionToken } from "../src/lib/auth";
 import { SITE_CONFIG } from "../src/lib/config";
 import {
@@ -263,16 +263,14 @@ async function runE2EFunctionalAudit() {
   const orderItemToReturn = sellerSuborder.items[0];
   assert(Boolean(orderItemToReturn), "Suborder contains item for return");
 
-  const returnReq = await createReturnRequest(
-    sellerSuborder.id,
-    customerUser.id,
-    orderItemToReturn.id,
-    1,
-    "DAMAGED",
-    "Item arrived with broken packaging seal."
-  );
-  assert(Boolean(returnReq.id), `Return request submitted: ID ${returnReq.id}`);
-  assert(returnReq.status === "SUBMITTED", "Return initialized in SUBMITTED state");
+  // Returns open only after delivery (Journey 3 delivers the package)
+  let earlyReturnBlocked = false;
+  try {
+    await createReturnRequest(sellerSuborder.id, customerUser.id, orderItemToReturn.id, 1, "DEFECTIVE", "Too early");
+  } catch {
+    earlyReturnBlocked = true;
+  }
+  assert(earlyReturnBlocked, "Return request refused while the package is not yet delivered");
 
   // ======================================================================
   // JOURNEY 3: Admin Creates 1P Product, Adjusts Inventory, Fulfills & Handles Return
@@ -344,6 +342,21 @@ async function runE2EFunctionalAudit() {
   );
   assert(waybill.trackingNumber === `TCS-${runId}-7788`, "Admin generated carrier waybill (TCS)");
 
+  await addShipmentMilestone(waybill.id, "DELIVERED", "Lahore");
+  const deliveredOrder = await getOrderById(customerOrder.id);
+  assert(deliveredOrder?.status === "DELIVERED", "Courier delivery marks the order DELIVERED");
+
+  const returnReq = await createReturnRequest(
+    sellerSuborder.id,
+    customerUser.id,
+    orderItemToReturn.id,
+    1,
+    "DEFECTIVE",
+    "Item arrived with broken packaging seal."
+  );
+  assert(Boolean(returnReq.id), `Return request submitted: ID ${returnReq.id}`);
+  assert(returnReq.status === "SUBMITTED", "Return initialized in SUBMITTED state");
+
   // Step 4: Admin Reconciles COD Courier Payment
   const codReconciled = await reconcileCodPayment(
     customerOrder.id,
@@ -356,9 +369,11 @@ async function runE2EFunctionalAudit() {
   const approvedReturn = await reviewReturnRequest(returnReq.id, "APPROVED", "Approved upon visual inspection");
   assert(approvedReturn.status === "APPROVED", "Admin approved customer return request");
 
-  const returnOutcome = await processReturnRestockAndRefund(returnReq.id);
-  assert(returnOutcome.refunded === true, "Customer refund processed successfully");
-  assert(returnOutcome.amountMinor > 0, `Refunded customer: PKR ${returnOutcome.amountMinor / 100}`);
+  await transitionReturnRequest(returnReq.id, "MARK_RECEIVED", { note: "Received at warehouse" });
+  const returnOutcome = await transitionReturnRequest(returnReq.id, "RECORD_REFUND", { refundReference: `IBFT-${runId}` });
+  assert(returnOutcome.status === "REFUNDED", "Customer refund recorded with transfer reference");
+  const refundRow = await prisma.refund.findFirst({ where: { reason: `Return ${returnReq.id}` } });
+  assert(Boolean(refundRow && refundRow.amountMinor > 0), `Refunded customer: PKR ${(refundRow?.amountMinor || 0) / 100}`);
 
   // ======================================================================
   // JOURNEY 4: Seller Registers, Onboards, Submits Product, Fulfills Suborder
@@ -487,19 +502,14 @@ async function runE2EFunctionalAudit() {
   assert(sellerShipment.trackingNumber === `LEO-${runId}-9900`, "Seller fulfilled order with Leopards Courier tracking");
 
   // Step 8: Suborder Delivered and Settlement Escrow Released
-  // Mark customer order as paid
-  await prisma.customerOrder.update({
-    where: { id: marketplaceOrder.id },
-    data: { paymentStatus: "PAID" },
-  });
-
-  // Seller marks delivered
+  // Seller marks delivered, then admin reconciles the courier's COD remittance
   await updateSellerOrderStatus(
     sellerReg.sellerOrg.id,
     merchantSuborder.id,
     SellerOrderStatus.DELIVERED,
     sellerReg.user.id
   );
+  await reconcileCodPayment(marketplaceOrder.id, `LEO-REMIT-${runId}`, customerUser.id);
 
   const updatedSuborder = await prisma.sellerOrder.findUnique({
     where: { id: merchantSuborder.id },

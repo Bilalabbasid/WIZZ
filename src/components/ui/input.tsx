@@ -13,7 +13,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
     return (
       <div className="w-full">
         {label && (
-          <label htmlFor={inputId} className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+          <label htmlFor={inputId} className="block text-[13px] font-medium text-mute mb-1.5">
             {label}
           </label>
         )}
@@ -28,8 +28,8 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
               ? `${inputId}-helper`
               : undefined
           }
-          className={`w-full rounded-lg border bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 disabled:bg-slate-50 disabled:text-slate-500 ${
-            error ? "border-rose-400 focus:ring-rose-500 focus:border-rose-500" : "border-slate-300"
+          className={`w-full rounded-xl border bg-white px-4 py-2.5 min-h-[44px] text-[15px] text-ink placeholder:text-mute-2 transition-colors focus:outline-none focus:ring-2 focus:ring-ink/15 focus:border-ink disabled:bg-canvas disabled:text-mute ${
+            error ? "border-rose-400 focus:ring-rose-500/20 focus:border-rose-500" : "border-line"
           } ${className}`}
           {...props}
         />

@@ -1,55 +1,59 @@
+import type { Metadata } from "next";
+import Link from "next/link";
 import { SITE_CONFIG } from "@/lib/config";
-import { RotateCcw, ShieldCheck, CheckCircle2 } from "lucide-react";
+import { getCommerceSettings } from "@/lib/commerce-settings";
+import { PolicySection, PolicyShell } from "../_components/policy-shell";
 
-export default function ReturnsPolicyPage() {
+export const metadata: Metadata = {
+  title: "Returns policy",
+  description: "How to return an item bought on WIZZ.PK and how refunds work.",
+  alternates: { canonical: `${SITE_CONFIG.canonicalUrl}/policies/returns` },
+};
+
+export default async function ReturnsPolicyPage() {
+  const { returnWindowDays } = await getCommerceSettings();
+
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-8">
-      <div>
-        <span className="text-xs font-bold text-indigo-600 tracking-wider uppercase">
-          Buyer Protection
-        </span>
-        <h1 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight mt-1">
-          Returns & Refund Policy
-        </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          30-Day Transparent Return Guarantee for Physical Merchandise
+    <PolicyShell
+      current="/policies/returns"
+      eyebrow="Returns policy"
+      title={`Returns within ${returnWindowDays} days.`}
+      muted="Request them from your order page."
+    >
+      <PolicySection number={1} title="Who can return">
+        <p>
+          You can request a return for a delivered package within {returnWindowDays} days of delivery. Return the item
+          unused, with its original packaging and accessories.
         </p>
-      </div>
+        <p>
+          Reasons you can choose: the item is defective, not as described, the wrong item, or you no longer want it.
+        </p>
+      </PolicySection>
 
-      <div className="bg-white rounded-3xl border border-slate-200/90 p-8 space-y-8 text-slate-700 text-sm leading-relaxed">
-        <section className="space-y-3">
-          <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-            <RotateCcw size={20} className="text-indigo-600" />
-            <span>1. 30-Day Eligibility Window</span>
-          </h2>
-          <p>
-            You may request a return within 30 days of receiving your item. To qualify, merchandise must be in its original physical condition, including original packaging, accessories, manuals, and protective tags.
-          </p>
-        </section>
+      <PolicySection number={2} title="How to request a return">
+        <ol>
+          <li>
+            Sign in and open the order in{" "}
+            <Link href="/account" className="underline underline-offset-4">
+              your account
+            </Link>
+            .
+          </li>
+          <li>Choose the delivered item and the quantity you want to return.</li>
+          <li>Pick a reason, add any details and submit.</li>
+        </ol>
+        <p>
+          Checked out as a guest? Email us with your order number and we&apos;ll help you start the return.
+        </p>
+      </PolicySection>
 
-        <section className="space-y-3">
-          <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-            <CheckCircle2 size={20} className="text-indigo-600" />
-            <span>2. Return Request Workflow</span>
-          </h2>
-          <ol className="list-decimal pl-5 space-y-1.5 text-xs text-slate-600">
-            <li>Visit your <strong>Order Details</strong> page in your customer account.</li>
-            <li>Click <strong>Request Return</strong> on any delivered physical item.</li>
-            <li>Select the reason code (Defective, Damaged, Incorrect Item, or Unwanted) and submit your notes.</li>
-            <li>Upon approval, a prepaid return shipping waybill will be generated for warehouse drop-off.</li>
-          </ol>
-        </section>
-
-        <section className="space-y-3">
-          <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-            <ShieldCheck size={20} className="text-indigo-600" />
-            <span>3. Inspection & Automated Restocking Refund</span>
-          </h2>
-          <p>
-            Once received at the warehouse, items undergo inspection. Refunds are issued to your original payment method within 2 business days of verification. Inventory balances are restored safely to the catalog via audited adjustments.
-          </p>
-        </section>
-      </div>
-    </div>
+      <PolicySection number={3} title="What happens next">
+        <p>
+          The seller or WIZZ.PK reviews your request and approves or declines it. After an approved item is received
+          back and checked, the refund is recorded on your order with a reference.
+        </p>
+        <p>You can follow the status of each return on your order page.</p>
+      </PolicySection>
+    </PolicyShell>
   );
 }

@@ -1,17 +1,17 @@
 import { prisma } from "@/lib/db";
 import {
+  Prisma,
   CustomerOrderStatus,
   PaymentStatus,
   SellerOrderStatus,
-  InventoryAdjustmentReason,
   RefundStatus,
   CodCollectionStatus,
   CodRemittanceStatus,
   SettlementStatus,
   SettlementEntryType,
 } from "@prisma/client";
-import { releaseStockReservation } from "../inventory/services";
-import { SITE_CONFIG } from "@/lib/config";
+import { returnOrderStock } from "../inventory/services";
+import { assertSellerTransition, recomputeCustomerOrderStatus } from "./lifecycle";
 
 export async function getOrderById(orderId: string) {
   return prisma.customerOrder.findUnique({
@@ -105,222 +105,144 @@ export async function getAllOrders(options: {
   return { orders, total, page, limit, totalPages: Math.ceil(total / limit) };
 }
 
-export async function updateCustomerOrderStatus(
-  orderId: string,
-  status: CustomerOrderStatus,
-  actorUserId?: string
-) {
-  return prisma.$transaction(async (tx) => {
-    const updated = await tx.customerOrder.update({
-      where: { id: orderId },
-      data: { status },
-    });
-
-    if (actorUserId) {
-      await tx.auditEvent.create({
-        data: {
-          actorUserId,
-          entityType: "CustomerOrder",
-          entityId: orderId,
-          action: "STATUS_CHANGE",
-          detailsJson: JSON.stringify({ newStatus: status }),
-        },
-      });
-    }
-
-    return updated;
-  });
-}
-
 /**
- * Cancels a single seller suborder package independently within a multi-seller customer order.
- * - Releases/restocks inventory for that suborder's items.
- * - If order was paid, issues an auditable refund record for the suborder amount.
- * - Reverses the seller's escrow hold and resets netSellerPayable to 0.
- * - If all suborders are cancelled, cancels the overall customer order.
+ * Cancels one seller package inside a transaction: returns its stock (releases this
+ * order's holds or restocks committed units), reverses unsettled seller credit, records a
+ * PENDING refund when the customer already paid (finance completes it manually with a
+ * reference), and re-derives the parent order status.
  */
-export async function cancelSellerSuborder(
+async function cancelSuborderInTx(
+  tx: Prisma.TransactionClient,
   sellerOrderId: string,
   reason: string,
-  actorUserId?: string
+  actorUserId?: string | null
 ) {
-  const sellerOrder = await prisma.sellerOrder.findUnique({
+  const sellerOrder = await tx.sellerOrder.findUnique({
     where: { id: sellerOrderId },
-    include: {
-      customerOrder: {
-        include: {
-          sellerOrders: true,
-        },
+    include: { customerOrder: true, items: true },
+  });
+  if (!sellerOrder) throw new Error("Seller order not found.");
+  if (sellerOrder.status === SellerOrderStatus.CANCELLED) return sellerOrder;
+
+  assertSellerTransition(sellerOrder.status, SellerOrderStatus.CANCELLED);
+
+  // Conditional flip so two concurrent cancellations cannot both restock
+  const flipped = await tx.sellerOrder.updateMany({
+    where: { id: sellerOrderId, status: sellerOrder.status },
+    data: { status: SellerOrderStatus.CANCELLED, netSellerPayableMinor: 0 },
+  });
+  if (flipped.count === 0) {
+    throw new Error("VALIDATION: This package was updated by someone else. Refresh and try again.");
+  }
+
+  await returnOrderStock(sellerOrder.customerOrderId, tx, {
+    reason: `Package ${sellerOrder.sellerOrderNumber} cancelled: ${reason}`,
+    actorUserId,
+    onlyVariantQuantities: sellerOrder.items
+      .filter((i) => i.variantId)
+      .map((i) => ({ variantId: i.variantId as string, quantity: i.quantity, sellerOrgId: sellerOrder.sellerOrgId })),
+  });
+
+  await tx.settlementLedger.updateMany({
+    where: {
+      sellerOrderId,
+      status: { in: [SettlementStatus.PENDING, SettlementStatus.IN_ESCROW, SettlementStatus.ELIGIBLE, SettlementStatus.HELD] },
+    },
+    data: { status: SettlementStatus.REVERSED, holdReason: `Package cancelled: ${reason}` },
+  });
+
+  const isPaid = sellerOrder.customerOrder.paymentStatus === PaymentStatus.PAID;
+  if (isPaid && sellerOrder.totalMinor > 0) {
+    await tx.refund.create({
+      data: {
+        customerOrderId: sellerOrder.customerOrderId,
+        sellerOrderId: sellerOrder.id,
+        amountMinor: sellerOrder.totalMinor,
+        currency: sellerOrder.customerOrder.currency,
+        status: RefundStatus.PENDING,
+        reason: `Package ${sellerOrder.sellerOrderNumber} cancelled: ${reason}`,
       },
-      items: true,
-      shipments: true,
+    });
+  }
+
+  await tx.auditEvent.create({
+    data: {
+      actorUserId: actorUserId || null,
+      entityType: "SellerOrder",
+      entityId: sellerOrderId,
+      action: "SUBORDER_CANCELLATION",
+      detailsJson: JSON.stringify({
+        customerOrderId: sellerOrder.customerOrderId,
+        sellerOrderNumber: sellerOrder.sellerOrderNumber,
+        fromStatus: sellerOrder.status,
+        pendingRefundMinor: isPaid ? sellerOrder.totalMinor : 0,
+        reason,
+      }),
     },
   });
 
-  if (!sellerOrder) {
-    throw new Error("Seller order not found.");
-  }
+  await recomputeCustomerOrderStatus(tx, sellerOrder.customerOrderId);
+  return { ...sellerOrder, status: SellerOrderStatus.CANCELLED };
+}
 
-  if (sellerOrder.status === SellerOrderStatus.CANCELLED) {
-    return sellerOrder;
-  }
+/** Cancels a single seller package (seller or admin action). */
+export async function cancelSellerSuborder(sellerOrderId: string, reason: string, actorUserId?: string) {
+  return prisma.$transaction((tx) => cancelSuborderInTx(tx, sellerOrderId, reason, actorUserId));
+}
 
-  // Prevent cancellation if suborder has already been dispatched
-  const hasShipped = sellerOrder.shipments.some((s) => s.status !== "LABEL_CREATED");
-  if (hasShipped || sellerOrder.status === SellerOrderStatus.DISPATCHED || sellerOrder.status === SellerOrderStatus.DELIVERED) {
-    throw new Error("Suborder has already been dispatched and cannot be cancelled directly. Initiate a return request instead.");
-  }
+const CUSTOMER_CANCELLABLE: CustomerOrderStatus[] = [
+  CustomerOrderStatus.PENDING_PAYMENT,
+  CustomerOrderStatus.PAID,
+  CustomerOrderStatus.PROCESSING,
+];
 
+/**
+ * Customer cancels their whole order. Allowed only while no package has been dispatched.
+ * Every package is cancelled (stock returned, credit reversed, refund recorded if paid) and
+ * the coupon use is given back.
+ */
+export async function requestOrderCancellation(orderId: string, userId: string, reason: string) {
+  const cleanReason = String(reason || "Customer requested cancellation").slice(0, 300);
   return prisma.$transaction(async (tx) => {
-    // 1. Restock inventory or release active reservations for each item
-    for (const item of sellerOrder.items) {
-      if (item.variantId) {
-        // Check for active reservations
-        const activeRes = await tx.inventoryReservation.findFirst({
-          where: { variantId: item.variantId, status: "ACTIVE" },
-        });
+    const order = await tx.customerOrder.findUnique({
+      where: { id: orderId },
+      include: { sellerOrders: true },
+    });
+    if (!order) throw new Error("Order not found.");
+    if (order.customerUserId !== userId) throw new Error("FORBIDDEN: You can only cancel your own orders.");
 
-        if (activeRes) {
-          await releaseStockReservation(activeRes.id);
-        } else {
-          // If already committed, increment availableUnits
-          await tx.inventoryLevel.update({
-            where: { variantId: item.variantId },
-            data: { availableUnits: { increment: item.quantity } },
-          });
+    if (!CUSTOMER_CANCELLABLE.includes(order.status)) {
+      throw new Error(
+        order.status === CustomerOrderStatus.CANCELLED
+          ? "VALIDATION: This order is already cancelled."
+          : "VALIDATION: This order has already been dispatched, so it can't be cancelled. You can request a return after delivery."
+      );
+    }
+    const dispatched = order.sellerOrders.some(
+      (so) => so.status === SellerOrderStatus.DISPATCHED || so.status === SellerOrderStatus.DELIVERED
+    );
+    if (dispatched) {
+      throw new Error("VALIDATION: Part of this order has already been dispatched, so it can't be cancelled. Contact support for help.");
+    }
 
-          await tx.inventoryAdjustment.create({
-            data: {
-              variantId: item.variantId,
-              sellerOrgId: sellerOrder.sellerOrgId,
-              actorUserId: actorUserId || null,
-              deltaUnits: item.quantity,
-              balanceAfter: 0,
-              reasonCode: InventoryAdjustmentReason.PURCHASE, // Compensating stock restock
-              notes: `Cancelled suborder #${sellerOrder.sellerOrderNumber}: ${reason}`,
-            },
-          });
-        }
+    for (const so of order.sellerOrders) {
+      if (so.status !== SellerOrderStatus.CANCELLED) {
+        await cancelSuborderInTx(tx, so.id, `Cancelled by customer: ${cleanReason}`, userId);
       }
     }
 
-    // 2. Mark seller suborder as CANCELLED with 0 net payable
-    const updatedSellerOrder = await tx.sellerOrder.update({
-      where: { id: sellerOrderId },
-      data: {
-        status: SellerOrderStatus.CANCELLED,
-        netSellerPayableMinor: 0,
-      },
-    });
-
-    // 3. Reverse any SettlementLedger escrow records
-    await tx.settlementLedger.updateMany({
-      where: { sellerOrderId, status: { in: [SettlementStatus.PENDING, SettlementStatus.IN_ESCROW] } },
-      data: {
-        status: SettlementStatus.REVERSED,
-        holdReason: `Suborder cancelled: ${reason}`,
-      },
-    });
-
-    // 4. If customer already paid, issue refund record for this suborder
-    const isPaid = sellerOrder.customerOrder.paymentStatus === PaymentStatus.PAID;
-    if (isPaid && sellerOrder.totalMinor > 0) {
-      await tx.refund.create({
-        data: {
-          customerOrderId: sellerOrder.customerOrderId,
-          sellerOrderId: sellerOrder.id,
-          amountMinor: sellerOrder.totalMinor,
-          currency: sellerOrder.customerOrder.currency,
-          status: RefundStatus.SUCCEEDED,
-          reason: `Suborder ${sellerOrder.sellerOrderNumber} cancelled: ${reason}`,
-          externalRefundRef: `REF_CAN_${Date.now()}`,
-        },
-      });
-    }
-
-    // 5. Update overall CustomerOrder state
-    const allSiblingOrders = sellerOrder.customerOrder.sellerOrders;
-    const remainingActive = allSiblingOrders.filter(
-      (so) => so.id !== sellerOrderId && so.status !== SellerOrderStatus.CANCELLED
-    );
-
-    if (remainingActive.length === 0) {
-      // All suborders in customer order are now cancelled
-      await tx.customerOrder.update({
-        where: { id: sellerOrder.customerOrderId },
-        data: {
-          status: CustomerOrderStatus.CANCELLED,
-          paymentStatus: isPaid ? PaymentStatus.REFUNDED : PaymentStatus.UNPAID,
-          notes: `Entire order cancelled. Last suborder #${sellerOrder.sellerOrderNumber} cancelled: ${reason}`,
-        },
-      });
-    }
-
-    // 6. Audit log
-    await tx.auditEvent.create({
-      data: {
-        actorUserId: actorUserId || null,
-        entityType: "SellerOrder",
-        entityId: sellerOrderId,
-        action: "SUBORDER_CANCELLATION",
-        detailsJson: JSON.stringify({
-          customerOrderId: sellerOrder.customerOrderId,
-          sellerOrderNumber: sellerOrder.sellerOrderNumber,
-          refundIssuedMinor: isPaid ? sellerOrder.totalMinor : 0,
-          reason,
-        }),
-      },
-    });
-
-    return updatedSellerOrder;
-  });
-}
-
-/**
- * Customer requests cancellation of their order.
- * If multiple suborders exist, cancels all eligible unfulfilled suborders.
- */
-export async function requestOrderCancellation(orderId: string, userId: string, reason: string) {
-  const order = await prisma.customerOrder.findUnique({
-    where: { id: orderId },
-    include: { sellerOrders: { include: { shipments: true } } },
-  });
-
-  if (!order) {
-    throw new Error("Order not found.");
-  }
-
-  if (order.customerUserId !== userId) {
-    throw new Error("FORBIDDEN: You can only cancel your own orders.");
-  }
-
-  // Only allow cancellation prior to shipment dispatch
-  const hasShipped = order.sellerOrders.some((so) =>
-    so.shipments.some((s) => s.status !== "LABEL_CREATED")
-  );
-
-  if (hasShipped || order.status === CustomerOrderStatus.SHIPPED || order.status === CustomerOrderStatus.DELIVERED) {
-    throw new Error("Order has already been dispatched and cannot be cancelled directly. Please initiate a return instead.");
-  }
-
-  return prisma.$transaction(async (tx) => {
     await tx.customerOrder.update({
       where: { id: orderId },
-      data: {
-        status: CustomerOrderStatus.CANCELLED,
-        notes: `Cancelled by customer: ${reason}`,
-      },
+      data: { status: CustomerOrderStatus.CANCELLED, notes: `Cancelled by customer: ${cleanReason}` },
     });
 
-    await tx.sellerOrder.updateMany({
-      where: { customerOrderId: orderId },
-      data: { status: SellerOrderStatus.CANCELLED, netSellerPayableMinor: 0 },
-    });
-
-    await tx.settlementLedger.updateMany({
-      where: { sellerOrder: { customerOrderId: orderId } },
-      data: { status: SettlementStatus.REVERSED, holdReason: `Customer cancelled: ${reason}` },
-    });
+    // Give the coupon use back (never below zero)
+    if (order.couponCode) {
+      await tx.coupon.updateMany({
+        where: { code: order.couponCode, timesUsed: { gt: 0 } },
+        data: { timesUsed: { decrement: 1 } },
+      });
+    }
 
     await tx.auditEvent.create({
       data: {
@@ -328,7 +250,7 @@ export async function requestOrderCancellation(orderId: string, userId: string, 
         entityType: "CustomerOrder",
         entityId: orderId,
         action: "CUSTOMER_CANCELLATION",
-        detailsJson: JSON.stringify({ reason }),
+        detailsJson: JSON.stringify({ reason: cleanReason }),
       },
     });
   });
@@ -451,110 +373,132 @@ export async function reconcileCodCourierRemittance(input: {
 }
 
 /**
- * Reconciles COD order payment using remittance reference.
- * Maintained for backward compatibility.
+ * Admin confirms the courier remitted the cash for a COD order.
+ * Requirements: the order is a COD order, not cancelled, not already paid, and every
+ * active package has been handed to the courier (cash is collected at delivery).
+ * Seller credit becomes payable only for packages already DELIVERED; the rest stay in
+ * escrow and are released when they are delivered. Cancelled packages are skipped and
+ * dispute holds / reversals are never overridden.
  */
 export async function reconcileCodPayment(
   orderId: string,
   remittanceRef: string,
   actorUserId?: string
 ) {
-  const order = await prisma.customerOrder.findUnique({
-    where: { id: orderId },
-    include: { codRecords: true, sellerOrders: true },
-  });
-
-  if (!order) {
-    throw new Error("Order not found.");
+  const ref = String(remittanceRef || "").trim();
+  if (ref.length < 3 || ref.length > 120) {
+    throw new Error("VALIDATION: Enter the courier remittance reference (3-120 characters).");
   }
-
-  if (order.paymentStatus === PaymentStatus.PAID) {
-    throw new Error("Order is already marked as PAID.");
-  }
-
-  let existingNotes: Record<string, unknown> = {};
-  try {
-    existingNotes = order.notes ? JSON.parse(order.notes) : {};
-  } catch {
-    existingNotes = { rawNotes: order.notes };
-  }
-
-  const updatedNotes = {
-    ...existingNotes,
-    paymentMethod: "CASH_ON_DELIVERY",
-    codStatus: "REMITTED_AND_RECONCILED",
-    courierRemittanceRef: remittanceRef,
-    reconciledAt: new Date().toISOString(),
-  };
 
   return prisma.$transaction(async (tx) => {
-    const updatedOrder = await tx.customerOrder.update({
+    const order = await tx.customerOrder.findUnique({
       where: { id: orderId },
-      data: {
-        paymentStatus: PaymentStatus.PAID,
-        notes: JSON.stringify(updatedNotes),
-      },
+      include: { codRecords: true, sellerOrders: true },
     });
-
-    // Update any COD records
-    await tx.codRemittanceRecord.updateMany({
-      where: { customerOrderId: orderId },
-      data: {
-        collectionStatus: CodCollectionStatus.COLLECTED_BY_COURIER,
-        remittanceStatus: CodRemittanceStatus.RECONCILED,
-        courierRemittanceRef: remittanceRef,
-        amountRemittedMinor: order.totalMinor,
-        reconciledAt: new Date(),
-      },
-    });
-
-    // Transition or initialize seller settlement ledgers to ELIGIBLE
-    for (const so of order.sellerOrders) {
-      const existingLedger = await tx.settlementLedger.findFirst({
-        where: { sellerOrderId: so.id, entryType: SettlementEntryType.ORDER_CREDIT },
-      });
-
-      if (existingLedger) {
-        await tx.settlementLedger.update({
-          where: { id: existingLedger.id },
-          data: {
-            status: SettlementStatus.ELIGIBLE,
-            eligibleAt: new Date(),
-            holdReason: null,
-          },
-        });
-      } else {
-        await tx.settlementLedger.create({
-          data: {
-            sellerOrgId: so.sellerOrgId,
-            sellerOrderId: so.id,
-            entryType: SettlementEntryType.ORDER_CREDIT,
-            amountMinor: so.netSellerPayableMinor,
-            balanceAfterMinor: so.netSellerPayableMinor,
-            status: SettlementStatus.ELIGIBLE,
-            eligibleAt: new Date(),
-            description: `Reconciled COD remittance for package #${so.sellerOrderNumber}`,
-          },
-        });
-      }
+    if (!order) throw new Error("Order not found.");
+    if (order.codRecords.length === 0) {
+      throw new Error("VALIDATION: This is not a cash-on-delivery order.");
+    }
+    if (order.status === CustomerOrderStatus.CANCELLED || order.status === CustomerOrderStatus.REFUNDED) {
+      throw new Error("VALIDATION: Cancelled or refunded orders cannot be reconciled.");
+    }
+    if (order.paymentStatus === PaymentStatus.PAID) {
+      throw new Error("VALIDATION: This order is already marked as paid.");
     }
 
-    if (actorUserId) {
-      await tx.auditEvent.create({
+    const active = order.sellerOrders.filter((so) => so.status !== SellerOrderStatus.CANCELLED);
+    const notWithCourier = active.filter(
+      (so) => so.status !== SellerOrderStatus.DISPATCHED && so.status !== SellerOrderStatus.DELIVERED
+    );
+    if (notWithCourier.length > 0) {
+      throw new Error(
+        `VALIDATION: Package ${notWithCourier.map((so) => so.sellerOrderNumber).join(", ")} has not been dispatched yet, so the courier cannot have collected cash for it.`
+      );
+    }
+
+    const expectedMinor = active.reduce((sum, so) => sum + so.totalMinor, 0);
+
+    let existingNotes: Record<string, unknown> = {};
+    try {
+      existingNotes = order.notes ? JSON.parse(order.notes) : {};
+    } catch {
+      existingNotes = { rawNotes: order.notes };
+    }
+
+    // Conditional flip: two admins reconciling at once cannot both succeed
+    const flipped = await tx.customerOrder.updateMany({
+      where: { id: orderId, paymentStatus: { not: PaymentStatus.PAID } },
+      data: {
+        paymentStatus: PaymentStatus.PAID,
+        notes: JSON.stringify({
+          ...existingNotes,
+          paymentMethod: "CASH_ON_DELIVERY",
+          codStatus: "REMITTED_AND_RECONCILED",
+          courierRemittanceRef: ref,
+          reconciledAt: new Date().toISOString(),
+        }),
+      },
+    });
+    if (flipped.count === 0) throw new Error("VALIDATION: This order is already marked as paid.");
+
+    const now = new Date();
+    for (const record of order.codRecords) {
+      const so = active.find((a) => a.id === record.sellerOrderId);
+      if (!so) continue; // cancelled package: nothing was collected
+      await tx.codRemittanceRecord.update({
+        where: { id: record.id },
         data: {
-          actorUserId,
-          entityType: "CustomerOrder",
-          entityId: orderId,
-          action: "COD_RECONCILIATION",
-          detailsJson: JSON.stringify({
-            remittanceRef,
-            amountMinor: order.totalMinor,
-            currency: order.currency,
-          }),
+          collectionStatus: CodCollectionStatus.COLLECTED_BY_COURIER,
+          collectedAt: record.collectedAt || now,
+          amountCollectedMinor: record.amountExpectedMinor,
+          remittanceStatus: CodRemittanceStatus.RECONCILED,
+          courierRemittanceRef: ref,
+          amountRemittedMinor: record.amountExpectedMinor,
+          reconciledAt: now,
         },
       });
     }
 
-    return updatedOrder;
+    for (const so of active) {
+      const delivered = so.status === SellerOrderStatus.DELIVERED;
+      const existingLedger = await tx.settlementLedger.findFirst({
+        where: { sellerOrderId: so.id, entryType: SettlementEntryType.ORDER_CREDIT },
+        orderBy: { createdAt: "asc" },
+      });
+      if (existingLedger) {
+        if (delivered && (existingLedger.status === SettlementStatus.PENDING || existingLedger.status === SettlementStatus.IN_ESCROW)) {
+          await tx.settlementLedger.update({
+            where: { id: existingLedger.id },
+            data: { status: SettlementStatus.ELIGIBLE, eligibleAt: now },
+          });
+        }
+        continue;
+      }
+      await tx.settlementLedger.create({
+        data: {
+          sellerOrgId: so.sellerOrgId,
+          sellerOrderId: so.id,
+          entryType: SettlementEntryType.ORDER_CREDIT,
+          amountMinor: so.netSellerPayableMinor,
+          balanceAfterMinor: so.netSellerPayableMinor,
+          status: delivered ? SettlementStatus.ELIGIBLE : SettlementStatus.IN_ESCROW,
+          eligibleAt: delivered ? now : null,
+          description: `COD remittance ${ref} for package #${so.sellerOrderNumber}`,
+          referenceId: ref,
+        },
+      });
+    }
+
+    await tx.auditEvent.create({
+      data: {
+        actorUserId: actorUserId || null,
+        entityType: "CustomerOrder",
+        entityId: orderId,
+        action: "COD_RECONCILIATION",
+        detailsJson: JSON.stringify({ remittanceRef: ref, amountMinor: expectedMinor, currency: order.currency }),
+      },
+    });
+
+    return tx.customerOrder.findUniqueOrThrow({ where: { id: orderId } });
   });
 }

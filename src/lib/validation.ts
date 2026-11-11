@@ -109,3 +109,60 @@ export function formatZodError(err: z.ZodError): string {
     })
     .join("; ");
 }
+
+/** First message per top-level field, for showing errors next to form inputs. */
+export function zodFieldErrors(err: z.ZodError): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const issue of err.issues) {
+    const key = issue.path.length ? String(issue.path[issue.path.length - 1]) : "_form";
+    if (!out[key]) out[key] = issue.message;
+  }
+  return out;
+}
+
+/** Saved address-book entry: same Pakistan delivery rules as checkout, plus an optional label. */
+export const addressBookSchema = checkoutAddressSchema.extend({
+  title: z
+    .string()
+    .trim()
+    .max(40, "Label must be at most 40 characters.")
+    .optional()
+    .transform((v) => v || undefined),
+  fullName: z.string().trim().min(2, "Enter the recipient's full name.").max(120),
+  street1: z.string().trim().min(5, "Enter the street address (at least 5 characters).").max(200),
+  city: z.string().trim().min(2, "Enter the city.").max(80),
+  countryCode: z.literal("PK", { error: "We currently deliver within Pakistan only." }).default("PK"),
+  isDefaultShipping: z.boolean().optional(),
+});
+
+export const addressUpdateSchema = addressBookSchema.extend({
+  id: z.string().trim().min(1, "Address id is required.").max(64),
+});
+
+export const profileUpdateSchema = z.object({
+  firstName: z.string().trim().min(1, "Enter your first name.").max(60, "First name is too long."),
+  lastName: z.string().trim().min(1, "Enter your last name.").max(60, "Last name is too long."),
+  /** Optional; an empty value clears the saved phone number. */
+  phone: z
+    .string()
+    .trim()
+    .max(30)
+    .optional()
+    .transform((v, ctx) => {
+      if (!v) return null;
+      const normalized = normalizePakistanPhone(v);
+      if (!normalized) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Enter a valid Pakistani phone number, e.g. 0300 1234567 or +92 300 1234567.",
+        });
+        return z.NEVER;
+      }
+      return normalized;
+    }),
+});
+
+export const passwordChangeSchema = z.object({
+  currentPassword: z.string().min(1, "Enter your current password.").max(128),
+  newPassword: registrationSchema.shape.password,
+});

@@ -102,9 +102,12 @@ WIZZ.PK is engineered as a production-grade retail platform operating as a modul
 | **M5: Administration & Logistics** | Admin catalog, inventory log, courier dispatch, COD remittance tool | In Progress | Route Handlers & Server Components verified |
 | **M6: Verification & Hardening** | 11 Domain test suites, build check, Turbopack bundle trace optimization | Pending | `npm test` & `npm run build` |
 
+| **M7: Full audit, fixes & redesign (2026-11-11)** | Security fixes (application/profile mass assignment, guest order privacy, password hash leak, cost price leak, raw DB errors, rate-limit spoofing, role checks on every admin page and seller route); order lifecycle module (validated package transitions, derived parent status, cancellation restock, COD reconcile rules); returns state machine (approve → receive/restock → refund with real reference, no double refunds); payouts and refunds for finance; admin customers/sellers/categories/coupons/returns/refunds/settings; settings wired into checkout; wishlist, profile, password, addresses edit; new storefront design (Geist, canvas/ink/volt) from owner references | Done | `npm test` 384 checks passing, `npm run build` OK, ESLint 0 errors, browser checks desktop + 375px, API flow tests for every order/return step |
+
 ---
 
 ## 4. Known Blockers & External Requirements
 0. **Seed catalog imagery**: Several seeded products show photos that do not match the product (e.g. a handbag on a knife listing, a keyboard on a wrist rest), and one product image URL (LuminaCraft storage basket) returns 404. Storefront now shows a placeholder for failed images, but real product photography is needed before launch.
 1. **Live Payment Gateway Credentials**: Online payment processing currently utilizes the sandboxed local development adapter. Live payment with Pakistani providers (Safepay, PayFast, Kuickpay) requires merchant account registration, API keys, and webhook endpoints configured in `.env`.
-2. **Object Storage**: Local file storage is utilized in development (`.uploads/`). Production deployment requires S3-compatible credentials (AWS S3, Cloudflare R2, or MinIO).
+2. **Object Storage**: Local file storage is utilized in development (`.uploads/`). Production deployment requires S3-compatible credentials (AWS S3, Cloudflare R2, or MinIO) because Hostinger replaces app files on each deploy.
+3. **Not built**: online payment provider, courier API booking/tracking webhooks, transactional email delivery (SMTP not configured), buyer-seller messaging, offers. Refunds and seller payouts are recorded manually by finance with real transfer references.

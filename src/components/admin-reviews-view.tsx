@@ -73,8 +73,8 @@ export function AdminReviewsView({ initialReviews }: { initialReviews: ReviewIte
         type: "success",
       });
       setTimeout(() => setToast(null), 3500);
-    } catch (err: any) {
-      setToast({ message: err.message || "Failed to update review", type: "error" });
+    } catch (err: unknown) {
+      setToast({ message: err instanceof Error && err.message ? err.message : "Failed to update review", type: "error" });
       setTimeout(() => setToast(null), 4000);
     } finally {
       setLoadingId(null);
@@ -126,7 +126,7 @@ export function AdminReviewsView({ initialReviews }: { initialReviews: ReviewIte
             onClick={() => setFilter(tab.key)}
             className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
               filter === tab.key
-                ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
+                ? "bg-brand-600 text-white shadow-md shadow-brand-600/20"
                 : "bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white"
             }`}
           >
@@ -227,7 +227,7 @@ export function AdminReviewsView({ initialReviews }: { initialReviews: ReviewIte
                       <Link
                         href={`/products/${review.product.slug}`}
                         target="_blank"
-                        className="text-indigo-400 hover:text-indigo-300 font-medium inline-flex items-center gap-1"
+                        className="text-brand-400 hover:text-brand-300 font-medium inline-flex items-center gap-1"
                       >
                         {review.product.title}
                         <ExternalLink size={12} />

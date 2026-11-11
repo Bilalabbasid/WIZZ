@@ -8,7 +8,6 @@ export async function POST(req: Request) {
     const user = await requireRole([
       "PLATFORM_SUPER_ADMIN",
       "PLATFORM_CATALOG_ADMIN",
-      "PLATFORM_SUPPORT",
     ]);
 
 
@@ -36,9 +35,9 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json({ success: true, review: updated });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return NextResponse.json(
-      { error: error?.message || "Failed to moderate review" },
+      { error: (error instanceof Error && error.message) || "Failed to moderate review" },
       { status: 403 }
     );
   }

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { clientErrorMessage, clientErrorStatus } from "@/lib/api-error";
 import { getCategories, getAllBrands } from "@/modules/catalog/services";
 
 export async function GET() {
@@ -10,7 +11,7 @@ export async function GET() {
 
     return NextResponse.json({ success: true, categories, brands });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Error fetching taxonomy";
-    return NextResponse.json({ error: message }, { status: 400 });
+    const message = clientErrorMessage(err, "Error fetching taxonomy");
+    return NextResponse.json({ error: message }, { status: clientErrorStatus(err) });
   }
 }

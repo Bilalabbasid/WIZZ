@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { clientErrorMessage, clientErrorStatus } from "@/lib/api-error";
+import { registrationSchema, zodFieldErrors } from "@/lib/validation";
 import { prisma } from "@/lib/db";
 import { hashPassword, createSessionToken } from "@/lib/auth";
 import { SITE_CONFIG } from "@/lib/config";
 import { cookies } from "next/headers";
 import { claimGuestCart } from "@/lib/cart-session";
-import { UserRole } from "@prisma/client";
+import { Prisma, UserRole } from "@prisma/client";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 export async function POST(req: NextRequest) {
@@ -23,16 +25,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { email, password, firstName, lastName, phone } = await req.json();
-
-    if (!email || !password || !firstName || !lastName) {
-      return NextResponse.json(
-        { error: "Email, password, first name, and last name are required." },
-        { status: 400 }
-      );
+    const body = await req.json().catch(() => null);
+    const parsed = registrationSchema.safeParse(body ?? {});
+    if (!parsed.success) {
+      const fieldErrors = zodFieldErrors(parsed.error);
+      // Default zod wording for missing names is not customer friendly.
+      if (fieldErrors.firstName) fieldErrors.firstName = "Enter your first name (up to 60 characters).";
+      if (fieldErrors.lastName) fieldErrors.lastName = "Enter your last name (up to 60 characters).";
+      if (fieldErrors.email) fieldErrors.email = "Enter a valid email address.";
+      const summary = Object.values(fieldErrors).join(" ");
+      return NextResponse.json({ error: summary || "Please check the form and try again.", fieldErrors }, { status: 400 });
     }
-
-    const cleanEmail = email.toLowerCase().trim();
+    const { email: cleanEmail, password, firstName, lastName, phone } = parsed.data;
 
     const existing = await prisma.user.findUnique({
       where: { email: cleanEmail },
@@ -40,8 +44,11 @@ export async function POST(req: NextRequest) {
 
     if (existing) {
       return NextResponse.json(
-        { error: "An account with this email address already exists." },
-        { status: 400 }
+        {
+          error: "An account with this email address already exists. Sign in instead.",
+          fieldErrors: { email: "An account with this email address already exists." },
+        },
+        { status: 409 }
       );
     }
 
@@ -51,9 +58,9 @@ export async function POST(req: NextRequest) {
       data: {
         email: cleanEmail,
         passwordHash,
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        phone: phone ? phone.trim() : null,
+        firstName,
+        lastName,
+        phone: phone ?? null,
         role: UserRole.CUSTOMER,
         isEmailVerified: true,
       },
@@ -86,7 +93,14 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Error creating account";
-    return NextResponse.json({ error: message }, { status: 500 });
+    // Two simultaneous sign-ups with the same email: the unique index wins the race.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return NextResponse.json(
+        { error: "An account with this email address already exists. Sign in instead." },
+        { status: 409 }
+      );
+    }
+    const message = clientErrorMessage(err, "We could not create your account. Please try again.");
+    return NextResponse.json({ error: message }, { status: clientErrorStatus(err, 500) });
   }
 }

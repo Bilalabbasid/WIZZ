@@ -171,7 +171,7 @@ export function SellerOnboardingWorkspace({
       <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/90 shadow-sm space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+            <div className="w-12 h-12 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center font-bold">
               <Store size={22} />
             </div>
             <div>
@@ -251,7 +251,7 @@ export function SellerOnboardingWorkspace({
             <div className="pl-6 pt-1">
               <a
                 href="/seller/portal"
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold transition shadow-sm"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-700 hover:bg-brand-800 text-white font-bold transition shadow-sm"
               >
                 <span>Enter Seller Workspace</span>
                 <ArrowRight size={14} />
@@ -261,9 +261,9 @@ export function SellerOnboardingWorkspace({
         )}
 
         {app.status === "SUBMITTED" && (
-          <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-900 text-xs space-y-1">
-            <div className="flex items-center gap-2 font-bold text-indigo-950">
-              <Clock size={15} className="text-indigo-600" />
+          <div className="p-4 rounded-2xl bg-brand-50 border border-brand-200 text-brand-900 text-xs space-y-1">
+            <div className="flex items-center gap-2 font-bold text-brand-950">
+              <Clock size={15} className="text-brand-600" />
               <span>Application Under Evaluation</span>
             </div>
             <p className="leading-relaxed pl-6">
@@ -272,7 +272,7 @@ export function SellerOnboardingWorkspace({
             <div className="pl-6 pt-2">
               <a
                 href="/seller/portal"
-                className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-700 hover:underline"
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-brand-700 hover:underline"
               >
                 <span>Explore Seller Workspace Drafts</span>
                 <ArrowRight size={12} />
@@ -301,7 +301,7 @@ export function SellerOnboardingWorkspace({
         {/* Step 1: Store & Brand Profile */}
         <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/90 shadow-sm space-y-6">
           <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
-            <div className="w-7 h-7 rounded-xl bg-indigo-600 text-white font-bold text-xs flex items-center justify-center">
+            <div className="w-7 h-7 rounded-xl bg-brand-600 text-white font-bold text-xs flex items-center justify-center">
               1
             </div>
             <h3 className="font-bold text-base text-slate-900">
@@ -314,7 +314,7 @@ export function SellerOnboardingWorkspace({
               label="Trading Store Name (Public)"
               required
               disabled={isLocked}
-              placeholder="e.g. CraftGear Adventure Tools"
+              placeholder="e.g. Apex Sports Gear"
               value={app.tradingName}
               onChange={(e) => setApp({ ...app, tradingName: e.target.value })}
             />
@@ -333,7 +333,7 @@ export function SellerOnboardingWorkspace({
         {/* Step 2: Legal Entity & Tax Information */}
         <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/90 shadow-sm space-y-6">
           <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
-            <div className="w-7 h-7 rounded-xl bg-indigo-600 text-white font-bold text-xs flex items-center justify-center">
+            <div className="w-7 h-7 rounded-xl bg-brand-600 text-white font-bold text-xs flex items-center justify-center">
               2
             </div>
             <h3 className="font-bold text-base text-slate-900">
@@ -346,7 +346,7 @@ export function SellerOnboardingWorkspace({
               label="Legal Registered Business Name"
               required
               disabled={isLocked}
-              placeholder="e.g. CraftGear Outfitters LLC"
+              placeholder="e.g. Apex Enterprises (Pvt) Ltd"
               value={app.legalBusinessName}
               onChange={(e) => setApp({ ...app, legalBusinessName: e.target.value })}
             />
@@ -355,7 +355,7 @@ export function SellerOnboardingWorkspace({
               <Input
                 label="Company Registration / CR Number"
                 disabled={isLocked}
-                placeholder="REG-US-887410"
+                placeholder="SECP registration no. (optional)"
                 value={app.businessRegNumber || ""}
                 onChange={(e) => setApp({ ...app, businessRegNumber: e.target.value })}
               />
@@ -363,7 +363,7 @@ export function SellerOnboardingWorkspace({
               <Input
                 label="Tax Identification / VAT Number"
                 disabled={isLocked}
-                placeholder="VAT-US-99120"
+                placeholder="NTN / STRN (optional)"
                 value={app.taxVatNumber || ""}
                 onChange={(e) => setApp({ ...app, taxVatNumber: e.target.value })}
               />
@@ -374,7 +374,7 @@ export function SellerOnboardingWorkspace({
         {/* Step 3: Contact & Warehouse Logistics */}
         <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/90 shadow-sm space-y-6">
           <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
-            <div className="w-7 h-7 rounded-xl bg-indigo-600 text-white font-bold text-xs flex items-center justify-center">
+            <div className="w-7 h-7 rounded-xl bg-brand-600 text-white font-bold text-xs flex items-center justify-center">
               3
             </div>
             <h3 className="font-bold text-base text-slate-900">
@@ -388,7 +388,7 @@ export function SellerOnboardingWorkspace({
                 label="Primary Contact Person"
                 required
                 disabled={isLocked}
-                placeholder="David Vance"
+                placeholder="e.g. Ayesha Malik"
                 value={app.contactName}
                 onChange={(e) => setApp({ ...app, contactName: e.target.value })}
               />
@@ -398,7 +398,7 @@ export function SellerOnboardingWorkspace({
                 type="email"
                 required
                 disabled={isLocked}
-                placeholder="david@craftgear.com"
+                placeholder="e.g. orders@apexgear.pk"
                 value={app.contactEmail}
                 onChange={(e) => setApp({ ...app, contactEmail: e.target.value })}
               />
@@ -408,7 +408,7 @@ export function SellerOnboardingWorkspace({
                 type="tel"
                 required
                 disabled={isLocked}
-                placeholder="+1 (555) 831-4099"
+                placeholder="03XX XXXXXXX"
                 value={app.contactPhone}
                 onChange={(e) => setApp({ ...app, contactPhone: e.target.value })}
               />
@@ -420,7 +420,7 @@ export function SellerOnboardingWorkspace({
                   label="Warehouse Pickup & Return Street Address"
                   required
                   disabled={isLocked}
-                  placeholder="1280 Waterfront Way, Suite 400"
+                  placeholder="e.g. Plot 42, Sector 15, Korangi Industrial Area"
                   value={app.addressLine}
                   onChange={(e) => setApp({ ...app, addressLine: e.target.value })}
                 />
@@ -430,7 +430,7 @@ export function SellerOnboardingWorkspace({
                 label="City / Hub"
                 required
                 disabled={isLocked}
-                placeholder="Portland"
+                placeholder="e.g. Karachi"
                 value={app.city}
                 onChange={(e) => setApp({ ...app, city: e.target.value })}
               />
@@ -443,10 +443,10 @@ export function SellerOnboardingWorkspace({
               <textarea
                 rows={3}
                 disabled={isLocked}
-                placeholder="Describe your manufacturing standards, types of physical hardware or gear, and current logistics fulfillment model..."
+                placeholder="What you sell, where your stock is kept, and how you ship orders today"
                 value={app.notes || ""}
                 onChange={(e) => setApp({ ...app, notes: e.target.value })}
-                className="w-full text-xs rounded-xl border border-slate-300 p-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-50"
+                className="w-full text-xs rounded-xl border border-slate-300 p-3 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-slate-50"
               />
             </div>
           </div>
@@ -455,7 +455,7 @@ export function SellerOnboardingWorkspace({
         {/* Step 4: Settlement & Payout Bank Details */}
         <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/90 shadow-sm space-y-6">
           <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
-            <div className="w-7 h-7 rounded-xl bg-indigo-600 text-white font-bold text-xs flex items-center justify-center">
+            <div className="w-7 h-7 rounded-xl bg-brand-600 text-white font-bold text-xs flex items-center justify-center">
               4
             </div>
             <h3 className="font-bold text-base text-slate-900">
@@ -481,7 +481,7 @@ export function SellerOnboardingWorkspace({
               label="Account Title"
               required
               disabled={isLocked}
-              placeholder="e.g. CraftGear Pvt Ltd"
+              placeholder="Exactly as on your bank account"
               value={app.bankAccountTitle || ""}
               onChange={(e) => setApp({ ...app, bankAccountTitle: e.target.value })}
             />
@@ -500,7 +500,7 @@ export function SellerOnboardingWorkspace({
         {/* Step 5: KYC Document Uploads */}
         <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/90 shadow-sm space-y-6">
           <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
-            <div className="w-7 h-7 rounded-xl bg-indigo-600 text-white font-bold text-xs flex items-center justify-center">
+            <div className="w-7 h-7 rounded-xl bg-brand-600 text-white font-bold text-xs flex items-center justify-center">
               5
             </div>
             <h3 className="font-bold text-base text-slate-900">
@@ -521,7 +521,7 @@ export function SellerOnboardingWorkspace({
                 type="file"
                 disabled={isLocked || isUploading}
                 onChange={(e) => handleFileUpload(e, "BUSINESS_REGISTRATION")}
-                className="text-xs text-slate-500 file:mr-2 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+                className="text-xs text-slate-500 file:mr-2 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100"
               />
             </div>
 
@@ -533,7 +533,7 @@ export function SellerOnboardingWorkspace({
                 type="file"
                 disabled={isLocked || isUploading}
                 onChange={(e) => handleFileUpload(e, "TAX_CERTIFICATE")}
-                className="text-xs text-slate-500 file:mr-2 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+                className="text-xs text-slate-500 file:mr-2 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100"
               />
             </div>
           </div>
@@ -551,7 +551,7 @@ export function SellerOnboardingWorkspace({
                     className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs"
                   >
                     <div className="flex items-center gap-2">
-                      <FileText size={15} className="text-indigo-600" />
+                      <FileText size={15} className="text-brand-600" />
                       <span className="font-semibold text-slate-800">{doc.originalFilename}</span>
                       <Badge variant="neutral" size="sm">
                         {doc.documentType}
@@ -586,7 +586,7 @@ export function SellerOnboardingWorkspace({
               size="lg"
               disabled={isSaving || isSubmitting}
               isLoading={isSubmitting}
-              className="shadow-lg shadow-indigo-600/25"
+              className="shadow-lg shadow-brand-600/25"
             >
               <span>Submit Application for Review</span>
               <ArrowRight size={18} />

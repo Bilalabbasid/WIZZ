@@ -1,17 +1,15 @@
 "use client";
 
+import Link from "next/link";
+
 import React, { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { formatDateTime } from "@/lib/formatters";
 import {
-  Store,
-  FileCheck2,
   AlertCircle,
   CheckCircle2,
   XCircle,
   FileText,
-  Clock,
   ExternalLink,
 } from "lucide-react";
 
@@ -46,8 +44,11 @@ export interface AdminAppItem {
 
 export function AdminApplicationReview({
   applications: initialApplications,
+  canReview,
 }: {
   applications: AdminAppItem[];
+  /** Mirrors the review API's role list; UI hiding is not the authorization boundary. */
+  canReview: boolean;
 }) {
   const [applications, setApplications] = useState<AdminAppItem[]>(initialApplications);
   const [selectedAppId, setSelectedAppId] = useState<string>(
@@ -124,7 +125,7 @@ export function AdminApplicationReview({
               }}
               className={`w-full text-left p-4 rounded-2xl border transition-all ${
                 isSelected
-                  ? "border-indigo-500 bg-slate-800 ring-1 ring-indigo-500 shadow-md"
+                  ? "border-brand-500 bg-slate-800 ring-1 ring-brand-500 shadow-md"
                   : "border-slate-800 bg-slate-900/60 hover:bg-slate-800/60"
               }`}
             >
@@ -186,7 +187,7 @@ export function AdminApplicationReview({
             </div>
 
             {statusMessage && (
-              <div className="p-3 rounded-xl bg-indigo-900/40 border border-indigo-700 text-indigo-200 text-xs flex items-center gap-2">
+              <div className="p-3 rounded-xl bg-brand-900/40 border border-brand-700 text-brand-200 text-xs flex items-center gap-2">
                 <CheckCircle2 size={15} />
                 <span>{statusMessage}</span>
               </div>
@@ -215,7 +216,7 @@ export function AdminApplicationReview({
                 </div>
                 <div>
                   <span className="text-slate-500 block">Brand Website</span>
-                  <span className="text-indigo-400 mt-0.5 block truncate">
+                  <span className="text-brand-400 mt-0.5 block truncate">
                     {selectedApp.websiteUrl || "N/A"}
                   </span>
                 </div>
@@ -235,7 +236,7 @@ export function AdminApplicationReview({
                 </p>
                 {selectedApp.notes && (
                   <p className="text-slate-400 italic pt-1 border-t border-slate-800">
-                    "{selectedApp.notes}"
+                    &ldquo;{selectedApp.notes}&rdquo;
                   </p>
                 )}
               </div>
@@ -255,7 +256,7 @@ export function AdminApplicationReview({
                         className="p-2.5 rounded-xl bg-slate-800/80 border border-slate-700/80 flex items-center justify-between"
                       >
                         <div className="flex items-center gap-2">
-                          <FileText size={15} className="text-indigo-400" />
+                          <FileText size={15} className="text-brand-400" />
                           <span className="font-semibold text-white">{doc.originalFilename}</span>
                           <span className="text-[10px] text-slate-400 font-mono">
                             ({doc.documentType})
@@ -265,7 +266,7 @@ export function AdminApplicationReview({
                           href={`/api/uploads/serve?key=${encodeURIComponent(doc.fileKey)}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-[11px] font-semibold text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+                          className="text-[11px] font-semibold text-brand-400 hover:text-brand-300 flex items-center gap-1"
                         >
                           <span>Inspect</span>
                           <ExternalLink size={12} />
@@ -288,71 +289,28 @@ export function AdminApplicationReview({
                   value={feedbackNote}
                   onChange={(e) => setFeedbackNote(e.target.value)}
                   placeholder="Specify required amendments, document deficiencies, or approval notes..."
-                  className="w-full text-xs rounded-xl border border-slate-700 bg-slate-900 p-3 text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full text-xs rounded-xl border border-slate-700 bg-slate-900 p-3 text-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
               </div>
 
               <div className="flex flex-wrap items-center gap-3 justify-end">
                 {selectedApp.approvedOrgId && selectedApp.status === "APPROVED" && (
-                  <>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={isSubmitting}
-                      onClick={async () => {
-                        const reason = prompt("Enter suspension reason for this seller:");
-                        if (!reason) return;
-                        setIsSubmitting(true);
-                        try {
-                          const res = await fetch(`/api/admin/sellers/${selectedApp.approvedOrgId}/suspend`, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ action: "SUSPEND", reason }),
-                          });
-                          const data = await res.json();
-                          if (!res.ok) throw new Error(data.error || "Failed to suspend");
-                          setStatusMessage(`Seller organization suspended: ${reason}`);
-                        } catch (err: unknown) {
-                          setStatusMessage(err instanceof Error ? err.message : "Error");
-                        } finally {
-                          setIsSubmitting(false);
-                        }
-                      }}
-                      className="border-rose-700/60 text-rose-400 hover:bg-rose-950/40"
-                    >
-                      <AlertCircle size={15} />
-                      <span>Suspend Seller</span>
-                    </Button>
-
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={isSubmitting}
-                      onClick={async () => {
-                        setIsSubmitting(true);
-                        try {
-                          const res = await fetch(`/api/admin/sellers/${selectedApp.approvedOrgId}/suspend`, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ action: "REACTIVATE" }),
-                          });
-                          const data = await res.json();
-                          if (!res.ok) throw new Error(data.error || "Failed to reactivate");
-                          setStatusMessage("Seller organization restored to ACTIVE status.");
-                        } catch (err: unknown) {
-                          setStatusMessage(err instanceof Error ? err.message : "Error");
-                        } finally {
-                          setIsSubmitting(false);
-                        }
-                      }}
-                      className="border-emerald-700/60 text-emerald-400 hover:bg-emerald-950/40"
-                    >
-                      <CheckCircle2 size={15} />
-                      <span>Reactivate Seller</span>
-                    </Button>
-                  </>
+                  <Link
+                    href={`/admin/sellers/${selectedApp.approvedOrgId}`}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[36px] rounded-lg border border-brand-600/60 text-brand-300 hover:bg-brand-950/40 text-xs font-medium"
+                  >
+                    <span>Manage seller status &amp; commission</span>
+                  </Link>
                 )}
 
+                {!canReview && (
+                  <p className="text-xs text-slate-400">
+                    Your role can view applications. Decisions require a super admin or support agent.
+                  </p>
+                )}
+
+                {canReview && (
+                <>
                 <Button
                   variant="outline"
                   size="sm"
@@ -385,6 +343,8 @@ export function AdminApplicationReview({
                   <CheckCircle2 size={15} />
                   <span>Approve & Provision Seller Org</span>
                 </Button>
+                </>
+                )}
               </div>
             </div>
           </div>

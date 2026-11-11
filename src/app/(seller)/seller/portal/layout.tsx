@@ -66,7 +66,7 @@ export default async function SellerPortalLayout({
                 W
               </div>
               <span className="font-black text-slate-900 tracking-tight text-lg">
-                WIZZ<span className="text-emerald-600">.PK</span>
+                WIZZ<span className="text-brand-600">.PK</span>
               </span>
             </Link>
             <span className="text-slate-300">/</span>
@@ -104,7 +104,7 @@ export default async function SellerPortalLayout({
 
             <Link
               href="/seller/onboarding"
-              className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100"
+              className="text-xs font-semibold text-brand-600 hover:text-brand-700 bg-brand-50 px-3 py-1.5 rounded-lg border border-brand-100"
             >
               KYC Onboarding
             </Link>
@@ -156,7 +156,7 @@ export default async function SellerPortalLayout({
             <div>
               <Link
                 href="/seller/onboarding"
-                className="font-bold text-indigo-700 hover:underline inline-flex items-center gap-1"
+                className="font-bold text-brand-700 hover:underline inline-flex items-center gap-1"
               >
                 <span>View Verification Status</span>
                 &rarr;

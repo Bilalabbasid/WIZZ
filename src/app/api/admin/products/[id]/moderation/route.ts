@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { clientErrorMessage, clientErrorStatus } from "@/lib/api-error";
 import { requireRole } from "@/lib/auth";
 import { UserRole } from "@prisma/client";
 import {
@@ -50,7 +51,7 @@ export async function POST(
 
     return NextResponse.json({ error: "Unsupported action" }, { status: 400 });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Error processing moderation review";
-    return NextResponse.json({ error: message }, { status: 400 });
+    const message = clientErrorMessage(err, "Error processing moderation review");
+    return NextResponse.json({ error: message }, { status: clientErrorStatus(err) });
   }
 }

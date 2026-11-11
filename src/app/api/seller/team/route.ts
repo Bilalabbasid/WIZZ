@@ -1,122 +1,91 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { SellerMembershipRole } from "@prisma/client";
 import {
-  getSellerContextForUser,
   getSellerTeamMembers,
   inviteSellerTeamMember,
   removeSellerTeamMember,
+  revokeSellerInvitation,
 } from "@/modules/sellers/services";
-import { SellerMembershipRole } from "@prisma/client";
+import { requireSellerContext, sellerErrorResponse, STORE_ADMIN_ROLES } from "@/modules/sellers/api-guard";
 
+export const dynamic = "force-dynamic";
+
+const appUrl = () => (process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || "").replace(/\/$/, "");
+
+/** Team list with invite links (owners and admins only: links grant access). */
 export async function GET() {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const context = await getSellerContextForUser(user.id);
-    if (!context?.sellerOrg) {
-      return NextResponse.json({ error: "No seller organization found for this user." }, { status: 404 });
-    }
-
-    const team = await getSellerTeamMembers(context.sellerOrg.id);
-
-    return NextResponse.json({ success: true, ...team });
+    const { context } = await requireSellerContext({ roles: STORE_ADMIN_ROLES, roleLabel: "manage the team" });
+    const team = await getSellerTeamMembers(context.sellerOrg!.id);
+    return NextResponse.json({
+      success: true,
+      members: team.members,
+      invitations: team.invitations.map((inv) => ({
+        id: inv.id,
+        email: inv.email,
+        role: inv.role,
+        expiresAt: inv.expiresAt,
+        invitedBy: inv.invitedBy,
+        inviteUrl: `${appUrl()}/seller/invite/${inv.token}`,
+      })),
+    });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Error fetching team";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return sellerErrorResponse(err, "Could not load the team.");
   }
 }
 
+/** Creates an invitation and returns its link (sent by the owner; no email is sent automatically). */
 export async function POST(req: NextRequest) {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const { user, context, membership } = await requireSellerContext({ roles: STORE_ADMIN_ROLES, roleLabel: "invite team members" });
+    const { email, role } = await req.json().catch(() => ({}));
+    if (!email || typeof email !== "string") {
+      return NextResponse.json({ error: "Enter the email address to invite." }, { status: 400 });
     }
 
-    const context = await getSellerContextForUser(user.id);
-    if (!context?.sellerOrg) {
-      return NextResponse.json({ error: "No seller organization found for this user." }, { status: 404 });
+    const requestedRole = (role as SellerMembershipRole) || SellerMembershipRole.FULFILLMENT_MANAGER;
+    // Only an owner can create another owner
+    if (requestedRole === SellerMembershipRole.OWNER && membership.role !== SellerMembershipRole.OWNER) {
+      return NextResponse.json({ error: "Only a store owner can invite another owner." }, { status: 403 });
     }
 
-    const isSuperAdmin = user.role === "PLATFORM_SUPER_ADMIN";
-    const callerRole = context.membership?.role;
-
-    // Only OWNER or ADMIN can invite team members
-    if (!isSuperAdmin && callerRole !== SellerMembershipRole.OWNER && callerRole !== SellerMembershipRole.ADMIN) {
-      return NextResponse.json(
-        { error: "FORBIDDEN: Only organization Owners and Admins can invite team members." },
-        { status: 403 }
-      );
-    }
-
-    const { email, role } = await req.json();
-    if (!email) {
-      return NextResponse.json({ error: "Email is required." }, { status: 400 });
-    }
-
-    const requestedRole = (role as SellerMembershipRole) || SellerMembershipRole.ADMIN;
-
-    // Privilege escalation protection: only an existing OWNER can invite another OWNER
-    if (requestedRole === SellerMembershipRole.OWNER && !isSuperAdmin && callerRole !== SellerMembershipRole.OWNER) {
-      return NextResponse.json(
-        { error: "FORBIDDEN: Only an organization Owner can invite another Owner." },
-        { status: 403 }
-      );
-    }
-
-    const invitation = await inviteSellerTeamMember(
-      context.sellerOrg.id,
-      user.id,
-      email,
-      requestedRole
-    );
-
-    return NextResponse.json({ success: true, invitation });
+    const invitation = await inviteSellerTeamMember(context.sellerOrg!.id, user.id, email, requestedRole);
+    return NextResponse.json({
+      success: true,
+      invitation: {
+        id: invitation.id,
+        email: invitation.email,
+        role: invitation.role,
+        expiresAt: invitation.expiresAt,
+        inviteUrl: `${appUrl()}/seller/invite/${invitation.token}`,
+      },
+    });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Error inviting team member";
-    const status = message.includes("FORBIDDEN") ? 403 : 400;
-    return NextResponse.json({ error: message }, { status });
+    return sellerErrorResponse(err, "Could not create the invitation.");
   }
 }
 
+/** Removes a member ({ membershipId }) or revokes a pending invitation ({ invitationId }). */
 export async function DELETE(req: NextRequest) {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const { user, context, membership } = await requireSellerContext({ roles: STORE_ADMIN_ROLES, roleLabel: "manage the team" });
+    const { membershipId, invitationId } = await req.json().catch(() => ({}));
+
+    if (invitationId) {
+      await revokeSellerInvitation(context.sellerOrg!.id, invitationId);
+      return NextResponse.json({ success: true });
     }
-
-    const context = await getSellerContextForUser(user.id);
-    if (!context?.sellerOrg) {
-      return NextResponse.json({ error: "No seller organization found for this user." }, { status: 404 });
-    }
-
-    const isSuperAdmin = user.role === "PLATFORM_SUPER_ADMIN";
-    const callerRole = context.membership?.role;
-
-    // Only OWNER or ADMIN can remove team members
-    if (!isSuperAdmin && callerRole !== SellerMembershipRole.OWNER && callerRole !== SellerMembershipRole.ADMIN) {
-      return NextResponse.json(
-        { error: "FORBIDDEN: Only organization Owners and Admins can remove team members." },
-        { status: 403 }
-      );
-    }
-
-    const { membershipId } = await req.json();
     if (!membershipId) {
-      return NextResponse.json({ error: "membershipId is required." }, { status: 400 });
+      return NextResponse.json({ error: "Choose the member to remove." }, { status: 400 });
+    }
+    if (membershipId === membership.id) {
+      return NextResponse.json({ error: "You cannot remove yourself." }, { status: 400 });
     }
 
-    const effectiveRole = isSuperAdmin ? "PLATFORM_SUPER_ADMIN" : callerRole;
-    const updated = await removeSellerTeamMember(context.sellerOrg.id, membershipId, effectiveRole);
-
-    return NextResponse.json({ success: true, membership: updated });
+    const effectiveRole = user.role === "PLATFORM_SUPER_ADMIN" ? "PLATFORM_SUPER_ADMIN" : membership.role;
+    const updated = await removeSellerTeamMember(context.sellerOrg!.id, membershipId, effectiveRole);
+    return NextResponse.json({ success: true, membership: { id: updated.id, isActive: updated.isActive } });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Error removing team member";
-    const status = message.includes("FORBIDDEN") ? 403 : 400;
-    return NextResponse.json({ error: message }, { status });
+    return sellerErrorResponse(err, "Could not update the team.");
   }
 }

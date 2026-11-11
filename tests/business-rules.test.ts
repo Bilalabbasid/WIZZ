@@ -78,8 +78,20 @@ import {
 import {
   createReturnRequest,
   reviewReturnRequest,
-  processReturnRestockAndRefund,
+  transitionReturnRequest,
 } from "../src/modules/returns/services";
+import { createShipment, addShipmentMilestone } from "../src/modules/fulfillment/services";
+
+/** Dispatches and delivers a package through the real fulfilment flow. */
+async function deliverPackage(sellerOrderId: string) {
+  const shipment = await createShipment(
+    sellerOrderId,
+    "TCS Express",
+    `TCS-${Date.now()}-${Math.floor(Math.random() * 100000)}`
+  );
+  await addShipmentMilestone(shipment.id, "DELIVERED");
+  return shipment;
+}
 import {
   submitProductReview,
   moderateReview,
@@ -184,14 +196,21 @@ async function runTestSuite() {
     const paidOrder = await getOrderById(order.id);
     assert(paidOrder?.paymentStatus === "PAID", "Order transitioned to PAID payment status");
     assert(paidOrder?.status === "PROCESSING", "Order transitioned to PROCESSING status");
-    assert(paidOrder?.sellerOrders[0]?.items.length! > 0, "Order items snapshot frozen with title and price");
+    assert((paidOrder?.sellerOrders[0]?.items.length ?? 0) > 0, "Order items snapshot frozen with title and price");
 
     // -----------------------------------------------------------------
     // TEST 2: Seller Application Lifecycle (Submit -> Feedback -> Resubmit -> Approve)
     // -----------------------------------------------------------------
     console.log("\n🧪 [Test 2] Seller Application Workflow (Draft -> Submit -> Review -> Changes -> Approve)");
-    const applicantUser = await prisma.user.findUnique({
-      where: { email: "applicant@craftgear.com" },
+    // A fresh applicant per run: one person cannot hold two open applications
+    const applicantUser = await prisma.user.create({
+      data: {
+        email: `applicant.${Date.now()}@example.test`,
+        passwordHash: "test-only-not-a-login",
+        firstName: "Danish",
+        lastName: "Iqbal",
+        role: UserRole.CUSTOMER,
+      },
     });
     assert(Boolean(applicantUser), "Applicant test user exists");
 
@@ -203,26 +222,30 @@ async function runTestSuite() {
     // Save draft
     const draft = await saveApplicationDraft(applicantUser!.id, {
       tradingName: "Summit Dynamics Gear",
-      legalBusinessName: "Summit Dynamics Global LLC",
-      contactName: "David Vance",
-      contactEmail: "david@summit.example",
-      contactPhone: "+1 555 992 1100",
-      countryCode: "US",
-      city: "Denver",
-      addressLine: "500 Mountain View Rd",
+      legalBusinessName: "Summit Dynamics (Pvt) Ltd",
+      contactName: "Danish Iqbal",
+      contactEmail: "danish@summit.example",
+      contactPhone: "+92 300 9921100",
+      city: "Islamabad",
+      addressLine: "Plot 5, I-9 Industrial Area",
+      bankName: "HBL",
+      bankAccountTitle: "Summit Dynamics (Pvt) Ltd",
+      bankIban: "PK36HABB0000001123456702",
     });
     assert(draft.status === SellerApplicationStatus.DRAFT || draft.status === SellerApplicationStatus.SUBMITTED, "Draft application saved");
 
     // Submit application
     const submittedApp = await submitSellerApplication(applicantUser!.id, {
       tradingName: "Summit Dynamics Gear",
-      legalBusinessName: "Summit Dynamics Global LLC",
-      contactName: "David Vance",
-      contactEmail: "david@summit.example",
-      contactPhone: "+1 555 992 1100",
-      countryCode: "US",
-      city: "Denver",
-      addressLine: "500 Mountain View Rd",
+      legalBusinessName: "Summit Dynamics (Pvt) Ltd",
+      contactName: "Danish Iqbal",
+      contactEmail: "danish@summit.example",
+      contactPhone: "+92 300 9921100",
+      city: "Islamabad",
+      addressLine: "Plot 5, I-9 Industrial Area",
+      bankName: "HBL",
+      bankAccountTitle: "Summit Dynamics (Pvt) Ltd",
+      bankIban: "PK36HABB0000001123456702",
       notes: "Alpine trekking hardware",
     });
     assert(submittedApp.status === SellerApplicationStatus.SUBMITTED, "Application transitioned to SUBMITTED");
@@ -240,13 +263,15 @@ async function runTestSuite() {
     // Resubmission by applicant
     const resubmittedApp = await submitSellerApplication(applicantUser!.id, {
       tradingName: "Summit Dynamics Gear",
-      legalBusinessName: "Summit Dynamics Global LLC",
-      contactName: "David Vance",
-      contactEmail: "david@summit.example",
-      contactPhone: "+1 555 992 1100",
-      countryCode: "US",
-      city: "Denver",
-      addressLine: "500 Mountain View Rd",
+      legalBusinessName: "Summit Dynamics (Pvt) Ltd",
+      contactName: "Danish Iqbal",
+      contactEmail: "danish@summit.example",
+      contactPhone: "+92 300 9921100",
+      city: "Islamabad",
+      addressLine: "Plot 5, I-9 Industrial Area",
+      bankName: "HBL",
+      bankAccountTitle: "Summit Dynamics (Pvt) Ltd",
+      bankIban: "PK36HABB0000001123456702",
       notes: "Updated documentation attached.",
     });
     assert(resubmittedApp.status === SellerApplicationStatus.SUBMITTED, "Application successfully resubmitted");
@@ -449,7 +474,19 @@ async function runTestSuite() {
     });
     await executeOrderPayment(deliveredOrder.id, `idemp_deliv_${Date.now()}`);
 
+    // Returns are only possible after delivery
+    let earlyReturnBlocked = false;
+    try {
+      const pre = await getOrderById(deliveredOrder.id);
+      await createReturnRequest(pre!.sellerOrders[0].id, customerUser!.id, pre!.sellerOrders[0].items[0].id, 1, "DEFECTIVE", "too early");
+    } catch (err: unknown) {
+      earlyReturnBlocked = err instanceof Error && err.message.includes("delivered");
+    }
+    assert(earlyReturnBlocked, "Return blocked before the package is delivered");
+
+    await deliverPackage((await getOrderById(deliveredOrder.id))!.sellerOrders[0].id);
     const deliveredRecord = await getOrderById(deliveredOrder.id);
+    assert(deliveredRecord?.status === "DELIVERED", "Parent order derives DELIVERED once its only package is delivered");
     const returnOrderItem = deliveredRecord!.sellerOrders[0].items[0];
 
     const returnReq = await createReturnRequest(
@@ -462,13 +499,56 @@ async function runTestSuite() {
     );
     assert(returnReq.status === "SUBMITTED", "Return request submitted in SUBMITTED state");
 
+    // Same unit cannot be returned twice
+    let duplicateReturnBlocked = false;
+    try {
+      await createReturnRequest(deliveredRecord!.sellerOrders[0].id, customerUser!.id, returnOrderItem.id, 1, "DEFECTIVE", "again");
+    } catch (err: unknown) {
+      duplicateReturnBlocked = err instanceof Error && /already been requested|at most/.test(err.message);
+    }
+    assert(duplicateReturnBlocked, "Duplicate return for the same unit is blocked");
+
     // Admin approves return
     const approvedReturn = await reviewReturnRequest(returnReq.id, "APPROVED");
-    assert(approvedReturn.status === "APPROVED", "Return request marked APPROVED with return waybill");
+    assert(approvedReturn.status === "APPROVED", "Return request marked APPROVED");
 
-    // Restock and refund
-    const restockResult = await processReturnRestockAndRefund(returnReq.id);
-    assert(restockResult.refunded === true, "Automated refund and restock executed safely");
+    let doubleApproveBlocked = false;
+    try {
+      await reviewReturnRequest(returnReq.id, "APPROVED");
+    } catch {
+      doubleApproveBlocked = true;
+    }
+    assert(doubleApproveBlocked, "Approving the same return twice is refused");
+
+    // Goods received: restock
+    const stockBeforeReceive = await getVariantInventory(targetVariant.id);
+    await transitionReturnRequest(returnReq.id, "MARK_RECEIVED", { note: "Inspected, sealed" });
+    const stockAfterReceive = await getVariantInventory(targetVariant.id);
+    assert(
+      stockAfterReceive.availableUnits === stockBeforeReceive.availableUnits + 1,
+      "Receiving the returned item restocks it exactly once"
+    );
+
+    // Refund needs the real transfer reference
+    let refundWithoutRefBlocked = false;
+    try {
+      await transitionReturnRequest(returnReq.id, "RECORD_REFUND", {});
+    } catch {
+      refundWithoutRefBlocked = true;
+    }
+    assert(refundWithoutRefBlocked, "Refund cannot be recorded without a payment reference");
+
+    const refunded = await transitionReturnRequest(returnReq.id, "RECORD_REFUND", { refundReference: `IBFT-${Date.now()}` });
+    assert(refunded.status === "REFUNDED", "Refund recorded with reference; return marked REFUNDED");
+
+    let doubleRefundBlocked = false;
+    try {
+      await transitionReturnRequest(returnReq.id, "RECORD_REFUND", { refundReference: `IBFT-${Date.now()}-2` });
+    } catch {
+      doubleRefundBlocked = true;
+    }
+    const refundCount = await prisma.refund.count({ where: { reason: `Return ${returnReq.id}` } });
+    assert(doubleRefundBlocked && refundCount === 1, "A return can be refunded only once");
 
     // -----------------------------------------------------------------
     // TEST 10: Verified Reviews & Admin Moderation
@@ -503,8 +583,8 @@ async function runTestSuite() {
     let flagAssertionCaught = false;
     try {
       assertFeatureFlag("SELLER_PORTAL");
-    } catch (e: any) {
-      if (e.message.includes("FEATURE_DISABLED")) {
+    } catch (e: unknown) {
+      if (e instanceof Error && e.message.includes("FEATURE_DISABLED")) {
         flagAssertionCaught = true;
       }
     }
@@ -561,11 +641,19 @@ async function runTestSuite() {
     assert(codOrder.paymentStatus === "UNPAID", "COD Order created in UNPAID payment state");
     assert(codOrder.status === "PROCESSING", "COD Order committed to PROCESSING status without immediate card capture");
 
+    // COD cannot be reconciled before the courier has the parcel
+    let earlyCodBlocked = false;
+    try {
+      await reconcileCodPayment(codOrder.id, "TCS-EARLY-1", adminUser!.id);
+    } catch {
+      earlyCodBlocked = true;
+    }
+    assert(earlyCodBlocked, "COD reconciliation refused before dispatch");
+
     // Courier delivery transition (Invariant: delivery does not mark order as PAID)
-    await prisma.customerOrder.update({
-      where: { id: codOrder.id },
-      data: { status: "DELIVERED" },
-    });
+    for (const so of (await getOrderById(codOrder.id))!.sellerOrders) {
+      await deliverPackage(so.id);
+    }
     const deliveredCodOrder = await getOrderById(codOrder.id);
     assert(deliveredCodOrder?.status === "DELIVERED", "COD Order status updated to DELIVERED");
     assert(deliveredCodOrder?.paymentStatus === "UNPAID", "Delivered COD Order remains UNPAID until courier cash remittance");
@@ -661,7 +749,11 @@ async function runTestSuite() {
       await addItemToCart(testCart.id, alphaVariant!.id, 1);
       await calculateCheckoutTotals(testCart.id);
     } catch (err: unknown) {
-      if (err instanceof Error && err.message.includes("cannot be ordered because merchant")) {
+      // Refused when added to the cart (not publicly purchasable) or, at the latest, at checkout
+      if (
+        err instanceof Error &&
+        /cannot be ordered because merchant|ITEM_UNAVAILABLE|not available/i.test(err.message)
+      ) {
         unapprovedOrderBlocked = true;
       }
     }
@@ -774,7 +866,19 @@ async function runTestSuite() {
     const betaOrgId = betaReg.sellerOrg.id;
     const betaUserId = betaReg.user.id;
 
-    // Approve Beta
+    // Beta submits a complete application, then the admin approves it
+    await submitSellerApplication(betaUserId, {
+      tradingName: "Beta Performance Athletics",
+      legalBusinessName: "Beta Athletics PVT",
+      city: "Karachi",
+      addressLine: "Plot 88, Korangi Industrial Area",
+      contactName: "Bilal Tariq",
+      contactEmail: testBetaEmail,
+      contactPhone: "+92 321 1122334",
+      bankName: "Meezan Bank Limited",
+      bankAccountTitle: "Beta Athletics PVT",
+      bankIban: "PK36MEZN0009912000099999",
+    });
     await reviewSellerApplication(betaReg.application.id, adminUser!.id, "APPROVED", "Approved Beta merchant");
 
     // Create Product Beta
@@ -924,7 +1028,8 @@ async function runTestSuite() {
     }
     assert(betaShipOrderBlocked, "Tenant isolation: Seller Beta cannot generate waybill on Seller Alpha's order");
 
-    // 9. Returns & Dispute Isolation: Customer files return on Alpha's order
+    // 9. Returns & Dispute Isolation: Customer files return on Alpha's (delivered) order
+    await deliverPackage(sellerOrderAlpha!.id);
     const orderItemAlpha = sellerOrderAlpha!.items[0];
     const returnAlpha = await createReturnRequest(
       sellerOrderAlpha!.id,
@@ -1552,10 +1657,13 @@ async function runTestSuite() {
       "DEFECTIVE",
       "Item defective on arrival"
     );
-    await reviewReturnRequest(returnReqBeta.id, "APPROVED", "Approved for return");
-
-    const refundOutcome = await processReturnRestockAndRefund(returnReqBeta.id);
-    assert(refundOutcome.refunded === true, "Return request processed successfully");
+    await resolveSellerReturn(betaOrgId, returnReqBeta.id, "APPROVED", "Approved for return", betaUserId);
+    await resolveSellerReturn(betaOrgId, returnReqBeta.id, "RECEIVED", "Item back, sealed", betaUserId);
+    const refundOutcome = await transitionReturnRequest(returnReqBeta.id, "RECORD_REFUND", {
+      actorUserId: adminUser!.id,
+      refundReference: `IBFT-RET-${Date.now()}`,
+    });
+    assert(refundOutcome.status === "REFUNDED", "Return request processed successfully");
 
     // Verify Customer Refund record
     const refundRecord = await prisma.refund.findFirst({
@@ -1567,16 +1675,16 @@ async function runTestSuite() {
     const betaPostReturnInventory = (await getVariantInventory(betaVariant.id)).availableUnits;
     assert(betaPostReturnInventory === betaPreReturnInventory + 1, "Returned unit restocked to available inventory");
 
-    // Verify double-entry settlement adjustments
+    // Verify the refund reduces the seller's payable balance by the net (after-commission) amount
     const refundDebitLedger = await prisma.settlementLedger.findFirst({
       where: { sellerOrderId: suborderBeta.id, entryType: "REFUND_DEBIT" },
     });
-    const commCreditLedger = await prisma.settlementLedger.findFirst({
-      where: { sellerOrderId: suborderBeta.id, entryType: "COMMISSION_REVERSAL_CREDIT" },
-    });
-    assert(Boolean(refundDebitLedger && commCreditLedger), "Double-entry accounting: REFUND_DEBIT and COMMISSION_REVERSAL_CREDIT recorded");
-    assert(refundDebitLedger!.amountMinor < 0, "Refund debit is negative minor units");
-    assert(commCreditLedger!.amountMinor > 0, "Commission reversal credit is positive minor units");
+    const expectedLineRefund = betaOrderItem.unitPriceMinor - Math.round(betaOrderItem.discountMinor / betaOrderItem.quantity);
+    const expectedSellerDebit =
+      expectedLineRefund - Math.round((expectedLineRefund * betaOrderItem.commissionRatePercent) / 100);
+    assert(Boolean(refundDebitLedger), "Refund debit recorded in the settlement ledger");
+    assert(refundDebitLedger!.amountMinor === -expectedSellerDebit, "Refund debit equals the net amount the seller was credited");
+    assert(refundDebitLedger!.status === "ELIGIBLE", "Refund debit nets against the next payout (ELIGIBLE)");
 
     // 7. Auditable Manual Settlement Workflow
     // Get statement
@@ -1593,7 +1701,7 @@ async function runTestSuite() {
         actorUserId: adminUser!.id,
       });
     } catch (err: unknown) {
-      if (err instanceof Error && err.message.includes("INSUFFICIENT_SETTLED_FUNDS")) {
+      if (err instanceof Error && err.message.includes("exceeds the eligible balance")) {
         excessPayoutBlocked = true;
       }
     }

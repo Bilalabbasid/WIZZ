@@ -4,8 +4,7 @@ import React, { useState } from "react";
 import { formatCurrency } from "@/lib/formatters";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Plus, Layers, AlertCircle, CheckCircle2, Star, Check } from "lucide-react";
+import { Plus, AlertCircle, Star } from "lucide-react";
 
 export interface AdminProductItem {
   id: string;
@@ -23,6 +22,9 @@ export interface AdminProductItem {
     inventoryLevel?: { availableUnits: number; reservedUnits: number } | null;
   }>;
   media: Array<{ url: string }>;
+  pendingChangesJson?: string | null;
+  moderationStatus?: string | null;
+  sellerOrg?: { name: string } | null;
 }
 
 /** Lists what a seller's staged revision would change, so reviewers know what they approve. */
@@ -74,7 +76,7 @@ export function AdminProductsView({
   categories: Array<{ id: string; name: string }>;
   brands: Array<{ id: string; name: string }>;
 }) {
-  const [products, setProducts] = useState(initialProducts);
+  const [products] = useState(initialProducts);
   const [showAddModal, setShowAddModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -85,7 +87,7 @@ export function AdminProductsView({
   const [categoryId, setCategoryId] = useState(categories[0]?.id || "");
   const [brandId, setBrandId] = useState(brands[0]?.id || "");
   const [sku, setSku] = useState("");
-  const [variantTitle, setVariantTitle] = useState("Standard Edition");
+  const [variantTitle] = useState("Standard Edition");
   const [priceDollars, setPriceDollars] = useState("2499.00");
   const [stock, setStock] = useState("25");
   const [imageUrl, setImageUrl] = useState("");
@@ -151,14 +153,16 @@ export function AdminProductsView({
             return sum + Math.max(0, (level?.availableUnits || 0) - (level?.reservedUnits || 0));
           }, 0);
 
-          const hasPendingRevisions = Boolean((p as any).pendingChangesJson);
-          const modStatus = (p as any).moderationStatus || "DRAFT";
+          const hasPendingRevisions = Boolean(p.pendingChangesJson);
+          const modStatus = p.moderationStatus || "DRAFT";
 
           return (
             <div key={p.id} className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 rounded-xl bg-slate-900 border border-slate-700 overflow-hidden flex-shrink-0">
                   {p.media[0]?.url ? (
+                    // Arbitrary seller/CDN hosts are not in next.config images.remotePatterns; a 48px thumbnail.
+                    // eslint-disable-next-line @next/next/no-img-element
                     <img src={p.media[0].url} alt={p.title} className="w-full h-full object-cover" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-slate-500 text-[10px]">
@@ -177,7 +181,7 @@ export function AdminProductsView({
                       </Badge>
                     )}
                     {hasPendingRevisions && (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-300 border border-brand-500/30">
                         Revision Pending
                       </span>
                     )}
@@ -188,13 +192,13 @@ export function AdminProductsView({
                     )}
                   </div>
                   <p className="text-slate-400 text-[11px]">
-                    Seller: <strong className="text-emerald-400">{(p as any).sellerOrg?.name || "WIZZ.PK Direct"}</strong> &bull; Category: <strong className="text-slate-300">{p.category.name}</strong> &bull; Main SKU:{" "}
+                    Seller: <strong className="text-emerald-400">{p.sellerOrg?.name || "WIZZ.PK Direct"}</strong> &bull; Category: <strong className="text-slate-300">{p.category.name}</strong> &bull; Main SKU:{" "}
                     <span className="font-mono text-slate-300">{mainVariant?.sku || "N/A"}</span>
                   </p>
                   {hasPendingRevisions && (
-                    <div className="text-[11px] text-indigo-200 bg-indigo-500/10 border border-indigo-500/20 rounded-lg px-2.5 py-1.5">
+                    <div className="text-[11px] text-brand-200 bg-brand-500/10 border border-brand-500/20 rounded-lg px-2.5 py-1.5">
                       <span className="font-bold">Proposed changes:</span>{" "}
-                      {summarizeRevision((p as any).pendingChangesJson, p.title).join("; ")}
+                      {summarizeRevision(p.pendingChangesJson, p.title).join("; ")}
                     </div>
                   )}
                 </div>
@@ -395,7 +399,7 @@ export function AdminProductsView({
                   id="feat"
                   checked={featured}
                   onChange={(e) => setFeatured(e.target.checked)}
-                  className="rounded border-slate-700 bg-slate-800 text-indigo-600"
+                  className="rounded border-slate-700 bg-slate-800 text-brand-600"
                 />
                 <label htmlFor="feat" className="text-slate-300">
                   Feature this product on storefront homepage

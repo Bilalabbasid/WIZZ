@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { CartStatus } from "@prisma/client";
+import { CartStatus, ProductStatus } from "@prisma/client";
 import { getVariantInventory } from "../inventory/services";
 
 /**
@@ -160,18 +160,44 @@ export async function getCartById(cartId: string) {
   });
 }
 
-export async function addItemToCart(cartId: string, variantId: string, quantity: number = 1) {
-  if (quantity <= 0) {
-    throw new Error("Quantity must be greater than zero.");
-  }
+/** Most units of one variant a single cart line may hold (matches the cart API limit). */
+export const MAX_CART_LINE_QUANTITY = 20;
 
-  // Check variant exists and is active
+/**
+ * A variant can be bought only when the variant is active and its product is publicly
+ * visible: PUBLISHED, approved by the platform, and sold by an ACTIVE seller org.
+ */
+async function assertVariantPurchasable(variantId: string) {
   const variant = await prisma.productVariant.findUnique({
     where: { id: variantId },
+    select: {
+      isActive: true,
+      product: {
+        select: {
+          status: true,
+          isApprovedByPlatform: true,
+          sellerOrg: { select: { operationalStatus: true } },
+        },
+      },
+    },
   });
-  if (!variant || !variant.isActive) {
+  if (
+    !variant ||
+    !variant.isActive ||
+    variant.product.status !== ProductStatus.PUBLISHED ||
+    !variant.product.isApprovedByPlatform ||
+    variant.product.sellerOrg.operationalStatus !== "ACTIVE"
+  ) {
     throw new Error("ITEM_UNAVAILABLE: This product is not available for purchase.");
   }
+}
+
+export async function addItemToCart(cartId: string, variantId: string, quantity: number = 1) {
+  if (!Number.isInteger(quantity) || quantity <= 0) {
+    throw new Error("Quantity must be a whole number greater than zero.");
+  }
+
+  await assertVariantPurchasable(variantId);
 
   // Check inventory stock availability
   const inventory = await getVariantInventory(variantId);
@@ -180,8 +206,22 @@ export async function addItemToCart(cartId: string, variantId: string, quantity:
   });
 
   const totalDesiredQuantity = (existingItem?.quantity || 0) + quantity;
+  if (totalDesiredQuantity > MAX_CART_LINE_QUANTITY) {
+    const remaining = Math.max(0, MAX_CART_LINE_QUANTITY - (existingItem?.quantity || 0));
+    throw new Error(
+      remaining === 0
+        ? `You already have the maximum of ${MAX_CART_LINE_QUANTITY} units of this item in your cart.`
+        : `You can add at most ${remaining} more of this item (limit ${MAX_CART_LINE_QUANTITY} per item).`
+    );
+  }
   if (totalDesiredQuantity > inventory.netSellableUnits) {
-    throw new Error(`INSUFFICIENT_STOCK: Only ${inventory.netSellableUnits} units available in stock.`);
+    throw new Error(
+      inventory.netSellableUnits <= 0
+        ? "INSUFFICIENT_STOCK: This item is out of stock."
+        : `INSUFFICIENT_STOCK: Only ${inventory.netSellableUnits} units available in stock${
+            existingItem ? ` (you already have ${existingItem.quantity} in your cart)` : ""
+          }.`
+    );
   }
 
   if (existingItem) {
@@ -204,14 +244,29 @@ export async function updateCartItemQuantity(cartId: string, variantId: string, 
   if (quantity <= 0) {
     return removeCartItem(cartId, variantId);
   }
+  if (!Number.isInteger(quantity) || quantity > MAX_CART_LINE_QUANTITY) {
+    throw new Error(`Quantity must be a whole number up to ${MAX_CART_LINE_QUANTITY}.`);
+  }
 
   const inventory = await getVariantInventory(variantId);
   if (quantity > inventory.netSellableUnits) {
-    throw new Error(`INSUFFICIENT_STOCK: Only ${inventory.netSellableUnits} units available.`);
+    throw new Error(
+      inventory.netSellableUnits <= 0
+        ? "INSUFFICIENT_STOCK: This item is now out of stock."
+        : `INSUFFICIENT_STOCK: Only ${inventory.netSellableUnits} units available.`
+    );
+  }
+
+  const existing = await prisma.cartItem.findUnique({
+    where: { cartId_variantId: { cartId, variantId } },
+    select: { id: true },
+  });
+  if (!existing) {
+    throw new Error("This item is no longer in your cart. Please refresh the page.");
   }
 
   return prisma.cartItem.update({
-    where: { cartId_variantId: { cartId, variantId } },
+    where: { id: existing.id },
     data: { quantity },
   });
 }

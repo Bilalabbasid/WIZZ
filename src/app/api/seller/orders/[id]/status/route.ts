@@ -1,42 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
-import { getSellerContextForUser } from "@/modules/sellers/services";
-import { updateSellerOrderStatus } from "@/modules/sellers/order-services";
 import { SellerOrderStatus } from "@prisma/client";
+import { updateSellerOrderStatus } from "@/modules/sellers/order-services";
+import { FULFILLMENT_ROLES, requireSellerContext, sellerErrorResponse } from "@/modules/sellers/api-guard";
 
-export async function PUT(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+/**
+ * Seller moves a package: CONFIRMED <-> PACKING, DISPATCHED -> DELIVERED, or CANCELLED
+ * (before dispatch, with a reason). Dispatch happens through the shipment route.
+ */
+export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const context = await getSellerContextForUser(user.id);
-    if (!context?.sellerOrg) {
-      return NextResponse.json({ error: "No seller organization found for this user." }, { status: 404 });
-    }
-
+    const { sellerOrg, user } = await requireSellerContext({ roles: FULFILLMENT_ROLES, roleLabel: "update orders" });
     const { id } = await params;
-    const { status } = await req.json();
+    const { status, reason } = await req.json().catch(() => ({}));
 
-    if (!status) {
-      return NextResponse.json({ error: "status is required." }, { status: 400 });
+    if (!status || !Object.values(SellerOrderStatus).includes(status)) {
+      return NextResponse.json({ error: "Choose a valid status." }, { status: 400 });
     }
 
-    const updated = await updateSellerOrderStatus(
-      context.sellerOrg.id,
-      id,
-      status as SellerOrderStatus,
-      user.id
-    );
-
+    const updated = await updateSellerOrderStatus(sellerOrg.id, id, status as SellerOrderStatus, user.id, reason);
     return NextResponse.json({ success: true, order: updated });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Error updating order status";
-    const status = message.includes("FORBIDDEN") ? 403 : 400;
-    return NextResponse.json({ error: message }, { status });
+    return sellerErrorResponse(err, "Could not update the order status.");
   }
 }

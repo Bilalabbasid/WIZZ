@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { clientErrorMessage, clientErrorStatus } from "@/lib/api-error";
 import { requireRole } from "@/lib/auth";
 import { UserRole } from "@prisma/client";
 import { prisma } from "@/lib/db";
@@ -68,7 +69,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, product });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Error creating product";
-    return NextResponse.json({ error: message }, { status: 400 });
+    const message = clientErrorMessage(err, "Error creating product");
+    return NextResponse.json({ error: message }, { status: clientErrorStatus(err) });
   }
 }

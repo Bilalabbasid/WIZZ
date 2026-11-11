@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Seller Workspace | WIZZ.PK",
+  title: "Seller Center",
   robots: { index: false, follow: false },
 };
 

@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { notifySellerMembers } from "@/modules/orders/lifecycle";
 import {
   CustomerOrderStatus,
   PaymentStatus,
@@ -252,6 +253,12 @@ async function applyPayment(
 
   for (const so of order.sellerOrders) {
     if (so.status === SellerOrderStatus.CANCELLED) continue;
+    await notifySellerMembers(tx, so.sellerOrgId, {
+      title: "New paid order to fulfil",
+      message: `Package ${so.sellerOrderNumber} has been paid online. Pack and dispatch it from Orders.`,
+      type: "ORDER",
+      linkUrl: `/seller/portal/orders/${so.id}`,
+    });
     const existingLedger = await tx.settlementLedger.findFirst({
       where: { sellerOrderId: so.id, entryType: SettlementEntryType.ORDER_CREDIT },
     });

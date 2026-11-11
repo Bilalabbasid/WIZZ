@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { clientErrorMessage, clientErrorStatus } from "@/lib/api-error";
 import { prisma } from "@/lib/db";
-import { ProductStatus, ProductModerationStatus } from "@prisma/client";
+import { publicProductWhere } from "@/modules/catalog/services";
 
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const q = (searchParams.get("q") || "").trim();
+    const q = (searchParams.get("q") || "").trim().slice(0, 100);
 
     if (!q || q.length < 2) {
       // Return top categories and popular suggestions
@@ -35,8 +36,9 @@ export async function GET(req: NextRequest) {
       // 2. Products matching title, description, or brand
       prisma.product.findMany({
         where: {
-          status: ProductStatus.PUBLISHED,
-          moderationStatus: ProductModerationStatus.APPROVED,
+          // Same public-visibility rule as listings and the product page
+          ...publicProductWhere,
+          variants: { some: { isActive: true } },
           OR: [
             { title: { contains: q, mode: "insensitive" } },
             { brand: { name: { contains: q, mode: "insensitive" } } },
@@ -56,6 +58,7 @@ export async function GET(req: NextRequest) {
             orderBy: { displayOrder: "asc" },
           },
           variants: {
+            where: { isActive: true },
             take: 1,
             select: { priceMinor: true, compareAtPriceMinor: true },
             orderBy: { priceMinor: "asc" },
@@ -80,7 +83,7 @@ export async function GET(req: NextRequest) {
       products: formattedProducts,
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Error querying search suggestions";
-    return NextResponse.json({ error: message }, { status: 500 });
+    const message = clientErrorMessage(err, "Search suggestions are unavailable right now.");
+    return NextResponse.json({ error: message }, { status: clientErrorStatus(err, 500) });
   }
 }

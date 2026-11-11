@@ -6,6 +6,9 @@ import {
   UserRole,
 } from "@prisma/client";
 import { hashPassword } from "@/lib/auth";
+import { z } from "zod";
+import { randomBytes } from "crypto";
+import { getCommerceSettings } from "@/lib/commerce-settings";
 
 export interface SellerApplicationInput {
   legalBusinessName: string;
@@ -23,6 +26,76 @@ export interface SellerApplicationInput {
   bankAccountTitle?: string | null;
   bankIban?: string | null;
   notes?: string | null;
+}
+
+/**
+ * The only application fields an applicant may write. Status, reviewer feedback,
+ * approvedOrgId and timestamps are owned by the server and the review workflow, so
+ * the request body is never spread into Prisma.
+ */
+const optionalText = (max: number) =>
+  z.preprocess(
+    (v) => (typeof v === "string" ? v.trim() || null : v ?? null),
+    z.string().max(max).nullable()
+  );
+
+const applicationDraftSchema = z.object({
+  legalBusinessName: optionalText(200),
+  tradingName: optionalText(120),
+  businessRegNumber: optionalText(60),
+  taxVatNumber: optionalText(60),
+  city: optionalText(80),
+  addressLine: optionalText(300),
+  websiteUrl: optionalText(300).refine((v) => !v || /^https?:\/\/[^\s]+$/i.test(v), "Website must start with http:// or https://"),
+  contactName: optionalText(120),
+  contactEmail: optionalText(200).refine((v) => !v || z.string().email().safeParse(v).success, "Enter a valid contact email address."),
+  contactPhone: optionalText(30),
+  bankName: optionalText(120),
+  bankAccountTitle: optionalText(160),
+  bankIban: optionalText(34).refine((v) => !v || /^[A-Za-z0-9 ]{10,34}$/.test(v), "IBAN may contain only letters and digits (10-34 characters)."),
+  notes: optionalText(2000),
+});
+
+const REQUIRED_FOR_SUBMIT: Array<[keyof z.infer<typeof applicationDraftSchema>, string]> = [
+  ["legalBusinessName", "Legal business name"],
+  ["tradingName", "Trading store name"],
+  ["contactName", "Primary contact person"],
+  ["contactEmail", "Business email"],
+  ["contactPhone", "Phone number"],
+  ["addressLine", "Warehouse / pickup address"],
+  ["city", "City"],
+  ["bankName", "Bank name"],
+  ["bankAccountTitle", "Bank account title"],
+  ["bankIban", "IBAN"],
+];
+
+function parseApplicationFields(data: unknown, requireComplete: boolean) {
+  const parsed = applicationDraftSchema.safeParse(data ?? {});
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues.map((i) => i.message).join(" "));
+  }
+  const fields = parsed.data;
+  if (requireComplete) {
+    const missing = REQUIRED_FOR_SUBMIT.filter(([key]) => !fields[key]).map(([, label]) => label);
+    if (missing.length) throw new Error(`Please complete: ${missing.join(", ")}.`);
+  }
+  return {
+    legalBusinessName: fields.legalBusinessName ?? "",
+    tradingName: fields.tradingName ?? "",
+    businessRegNumber: fields.businessRegNumber,
+    taxVatNumber: fields.taxVatNumber,
+    countryCode: "PK",
+    city: fields.city ?? "",
+    addressLine: fields.addressLine ?? "",
+    websiteUrl: fields.websiteUrl,
+    contactName: fields.contactName ?? "",
+    contactEmail: (fields.contactEmail ?? "").toLowerCase(),
+    contactPhone: fields.contactPhone ?? "",
+    bankName: fields.bankName,
+    bankAccountTitle: fields.bankAccountTitle,
+    bankIban: fields.bankIban ? fields.bankIban.replace(/\s+/g, "").toUpperCase() : null,
+    notes: fields.notes,
+  };
 }
 
 export interface SellerRegistrationInput {
@@ -85,7 +158,7 @@ export async function registerSellerAccount(input: SellerRegistrationInput) {
         city: input.city?.trim() || null,
         addressLine: input.addressLine?.trim() || null,
         operationalStatus: SellerOperationalStatus.INACTIVE,
-        commissionRatePercent: 10,
+        commissionRatePercent: (await getCommerceSettings()).defaultCommissionPercent,
       },
     });
 
@@ -209,7 +282,8 @@ export async function getSellerApplicationById(applicationId: string) {
   });
 }
 
-export async function saveApplicationDraft(userId: string, data: Partial<SellerApplicationInput>) {
+export async function saveApplicationDraft(userId: string, data: unknown) {
+  const fields = parseApplicationFields(data, false);
   const existing = await prisma.sellerApplication.findFirst({
     where: {
       applicantUserId: userId,
@@ -218,38 +292,30 @@ export async function saveApplicationDraft(userId: string, data: Partial<SellerA
   });
 
   if (existing) {
-    return prisma.sellerApplication.update({
-      where: { id: existing.id },
-      data: {
-        ...data,
-      },
-    });
+    return prisma.sellerApplication.update({ where: { id: existing.id }, data: fields });
   }
 
+  await assertNoOpenApplication(userId);
   return prisma.sellerApplication.create({
-    data: {
-      applicantUserId: userId,
-      legalBusinessName: data.legalBusinessName || "",
-      tradingName: data.tradingName || "",
-      businessRegNumber: data.businessRegNumber || null,
-      taxVatNumber: data.taxVatNumber || null,
-      countryCode: data.countryCode || "PK",
-      city: data.city || "",
-      addressLine: data.addressLine || "",
-      websiteUrl: data.websiteUrl || null,
-      contactName: data.contactName || "",
-      contactEmail: data.contactEmail || "",
-      contactPhone: data.contactPhone || "",
-      bankName: data.bankName || null,
-      bankAccountTitle: data.bankAccountTitle || null,
-      bankIban: data.bankIban || null,
-      notes: data.notes || null,
-      status: SellerApplicationStatus.DRAFT,
-    },
+    data: { applicantUserId: userId, ...fields, status: SellerApplicationStatus.DRAFT },
   });
 }
 
-export async function submitSellerApplication(userId: string, data: SellerApplicationInput) {
+/** An applicant cannot start a second application while one is under review or decided. */
+async function assertNoOpenApplication(userId: string) {
+  const other = await prisma.sellerApplication.findFirst({
+    where: { applicantUserId: userId },
+    orderBy: { createdAt: "desc" },
+    select: { status: true },
+  });
+  if (other && other.status !== SellerApplicationStatus.REJECTED) {
+    const label = other.status === SellerApplicationStatus.SUBMITTED ? "is already under review" : `is ${other.status.toLowerCase().replace(/_/g, " ")}`;
+    throw new Error(`Your seller application ${label}, so it cannot be edited right now.`);
+  }
+}
+
+export async function submitSellerApplication(userId: string, data: unknown) {
+  const fields = parseApplicationFields(data, true);
   const existing = await prisma.sellerApplication.findFirst({
     where: {
       applicantUserId: userId,
@@ -264,7 +330,7 @@ export async function submitSellerApplication(userId: string, data: SellerApplic
       const updated = await tx.sellerApplication.update({
         where: { id: existing.id },
         data: {
-          ...data,
+          ...fields,
           status: SellerApplicationStatus.SUBMITTED,
           submittedAt: new Date(),
         },
@@ -284,11 +350,12 @@ export async function submitSellerApplication(userId: string, data: SellerApplic
     });
   }
 
+  await assertNoOpenApplication(userId);
   return prisma.$transaction(async (tx) => {
     const created = await tx.sellerApplication.create({
       data: {
         applicantUserId: userId,
-        ...data,
+        ...fields,
         status: SellerApplicationStatus.SUBMITTED,
         submittedAt: new Date(),
       },
@@ -333,6 +400,31 @@ export async function reviewSellerApplication(
 
   if (!application) {
     throw new Error("Application not found.");
+  }
+
+  // Decisions are made only on submitted applications (drafts still hold placeholder data)
+  if (application.status !== SellerApplicationStatus.SUBMITTED) {
+    throw new Error(
+      `VALIDATION: This application is ${application.status.toLowerCase().replace(/_/g, " ")}. Only submitted applications can be reviewed.`
+    );
+  }
+  if (decision !== "APPROVED" && (!feedbackNote || feedbackNote.trim().length < 3)) {
+    throw new Error("VALIDATION: Add a note explaining the decision to the applicant.");
+  }
+
+  // The store being activated must be one the applicant already owns
+  if (application.approvedOrgId) {
+    const ownMembership = await prisma.sellerMembership.findFirst({
+      where: {
+        sellerOrgId: application.approvedOrgId,
+        userId: application.applicantUserId,
+        role: SellerMembershipRole.OWNER,
+      },
+      select: { id: true },
+    });
+    if (!ownMembership) {
+      throw new Error("FORBIDDEN: This application is linked to a store the applicant does not own. Reject it and investigate.");
+    }
   }
 
   const fromStatus = application.status;
@@ -407,7 +499,7 @@ export async function reviewSellerApplication(
             bankIban: application.bankIban,
             city: application.city,
             addressLine: application.addressLine,
-            commissionRatePercent: 10,
+            commissionRatePercent: (await getCommerceSettings()).defaultCommissionPercent,
           },
         });
 
@@ -634,7 +726,7 @@ export async function updateSellerOrgProfile(
  * Aggregates live dashboard metrics for a seller organization.
  */
 export async function getSellerDashboardStats(sellerOrgId: string) {
-  const [orders, products, lowStockLevels] = await Promise.all([
+  const [orders, products, allLevels] = await Promise.all([
     prisma.sellerOrder.findMany({
       where: { sellerOrgId },
       orderBy: { createdAt: "desc" },
@@ -655,10 +747,7 @@ export async function getSellerDashboardStats(sellerOrgId: string) {
       select: { id: true, status: true },
     }),
     prisma.inventoryLevel.findMany({
-      where: {
-        sellerOrgId,
-        availableUnits: { lte: 5 },
-      },
+      where: { sellerOrgId, variant: { isActive: true, product: { status: { not: "ARCHIVED" } } } },
       include: {
         variant: {
           select: { title: true, sku: true, product: { select: { title: true } } },
@@ -666,17 +755,22 @@ export async function getSellerDashboardStats(sellerOrgId: string) {
       },
     }),
   ]);
+  // Each variant has its own threshold; compare against sellable units (available minus held)
+  const lowStockLevels = allLevels
+    .filter((l) => l.availableUnits - l.reservedUnits <= l.lowStockThreshold)
+    .sort((a, b) => a.availableUnits - b.availableUnits);
 
   let totalGmvMinor = 0;
   let totalNetPayableMinor = 0;
   let pendingOrdersCount = 0;
 
   for (const o of orders) {
-    if (o.status !== "CANCELLED") {
+    // Unpaid online orders and cancelled packages are not sales
+    if (o.status !== "CANCELLED" && o.status !== "PENDING_PAYMENT") {
       totalGmvMinor += o.totalMinor;
       totalNetPayableMinor += o.netSellerPayableMinor;
     }
-    if (o.status === "CONFIRMED" || o.status === "PACKING" || o.status === "PENDING_PAYMENT") {
+    if (o.status === "CONFIRMED" || o.status === "PACKING") {
       pendingOrdersCount++;
     }
   }
@@ -694,7 +788,7 @@ export async function getSellerDashboardStats(sellerOrgId: string) {
       productTitle: lvl.variant.product.title,
       variantTitle: lvl.variant.title,
       sku: lvl.variant.sku,
-      availableUnits: lvl.availableUnits,
+      availableUnits: lvl.availableUnits - lvl.reservedUnits,
       lowStockThreshold: lvl.lowStockThreshold,
     })),
     recentOrders: orders.slice(0, 5).map((o) => ({
@@ -716,14 +810,14 @@ export async function getSellerDashboardStats(sellerOrgId: string) {
 export async function getSellerTeamMembers(sellerOrgId: string) {
   const [members, invitations] = await Promise.all([
     prisma.sellerMembership.findMany({
-      where: { sellerOrgId },
+      where: { sellerOrgId, isActive: true },
       include: {
         user: { select: { id: true, email: true, firstName: true, lastName: true, phone: true } },
       },
       orderBy: { createdAt: "asc" },
     }),
     prisma.sellerInvitation.findMany({
-      where: { sellerOrgId, status: "PENDING" },
+      where: { sellerOrgId, status: "PENDING", expiresAt: { gt: new Date() } },
       include: {
         invitedBy: { select: { firstName: true, lastName: true } },
       },
@@ -758,7 +852,20 @@ export async function inviteSellerTeamMember(
     throw new Error("This user is already an active member of this organization.");
   }
 
-  const token = `inv_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  if (!z.string().email().safeParse(cleanEmail).success) {
+    throw new Error("VALIDATION: Enter a valid email address.");
+  }
+  if (!Object.values(SellerMembershipRole).includes(role)) {
+    throw new Error("VALIDATION: Choose a valid team role.");
+  }
+
+  // Replace any earlier pending invite for the same email
+  await prisma.sellerInvitation.updateMany({
+    where: { sellerOrgId, email: cleanEmail, status: "PENDING" },
+    data: { status: "REVOKED" },
+  });
+
+  const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
   return prisma.sellerInvitation.create({
@@ -773,6 +880,73 @@ export async function inviteSellerTeamMember(
   });
 }
 
+/** Looks up a pending, unexpired invitation for the accept page. */
+export async function getSellerInvitation(token: string) {
+  if (!token || token.length < 20) return null;
+  const inv = await prisma.sellerInvitation.findUnique({
+    where: { token },
+    include: { sellerOrg: { select: { name: true, operationalStatus: true } } },
+  });
+  if (!inv || inv.status !== "PENDING" || inv.expiresAt < new Date()) return null;
+  return inv;
+}
+
+/**
+ * Signed-in user accepts a team invitation. The account email must match the invited
+ * email, so a leaked link cannot be used by someone else.
+ */
+export async function acceptSellerInvitation(token: string, userId: string) {
+  return prisma.$transaction(async (tx) => {
+    const inv = await tx.sellerInvitation.findUnique({ where: { token } });
+    if (!inv || inv.status !== "PENDING" || inv.expiresAt < new Date()) {
+      throw new Error("VALIDATION: This invitation is invalid or has expired. Ask the store owner for a new one.");
+    }
+    const user = await tx.user.findUnique({ where: { id: userId }, select: { email: true } });
+    if (!user || user.email.toLowerCase() !== inv.email.toLowerCase()) {
+      throw new Error(`FORBIDDEN: This invitation was sent to ${inv.email}. Sign in with that email to accept it.`);
+    }
+    const otherStore = await tx.sellerMembership.findFirst({
+      where: { userId, isActive: true, sellerOrgId: { not: inv.sellerOrgId } },
+      select: { id: true },
+    });
+    if (otherStore) {
+      throw new Error("VALIDATION: Your account already belongs to another store. Use a different email for this team.");
+    }
+
+    const flipped = await tx.sellerInvitation.updateMany({
+      where: { id: inv.id, status: "PENDING" },
+      data: { status: "ACCEPTED" },
+    });
+    if (flipped.count === 0) throw new Error("VALIDATION: This invitation was already used.");
+
+    const membership = await tx.sellerMembership.upsert({
+      where: { sellerOrgId_userId: { sellerOrgId: inv.sellerOrgId, userId } },
+      create: { sellerOrgId: inv.sellerOrgId, userId, role: inv.role },
+      update: { isActive: true, role: inv.role },
+    });
+
+    await tx.auditEvent.create({
+      data: {
+        actorUserId: userId,
+        entityType: "SellerOrg",
+        entityId: inv.sellerOrgId,
+        action: "TEAM_INVITE_ACCEPTED",
+        detailsJson: JSON.stringify({ invitationId: inv.id, role: inv.role }),
+      },
+    });
+    return membership;
+  });
+}
+
+/** Revokes a pending invitation of this seller org. */
+export async function revokeSellerInvitation(sellerOrgId: string, invitationId: string) {
+  const res = await prisma.sellerInvitation.updateMany({
+    where: { id: invitationId, sellerOrgId, status: "PENDING" },
+    data: { status: "REVOKED" },
+  });
+  if (res.count === 0) throw new Error("Invitation not found.");
+}
+
 /**
  * Removes a team member from a seller organization.
  */
@@ -785,7 +959,7 @@ export async function removeSellerTeamMember(
     where: { id: membershipId },
   });
 
-  if (!target || target.sellerOrgId !== sellerOrgId) {
+  if (!target || target.sellerOrgId !== sellerOrgId || !target.isActive) {
     throw new Error("Membership not found in this organization.");
   }
 
@@ -832,20 +1006,16 @@ export async function getSellerAuditHistory(sellerOrgId: string, limit: number =
  */
 export async function getSellerNotifications(userId: string, sellerOrgId?: string) {
   return prisma.notification.findMany({
-    where: {
-      OR: [
-        { userId },
-        ...(sellerOrgId ? [{ sellerOrgId }] : []),
-      ],
-    },
+    where: sellerOrgId ? { userId, OR: [{ sellerOrgId }, { sellerOrgId: null }] } : { userId },
     orderBy: { createdAt: "desc" },
     take: 50,
   });
 }
 
-export async function markNotificationRead(notificationId: string, userId: string) {
+/** Marks one notification (or all when `notificationId` is null) as read, only the caller's own. */
+export async function markNotificationRead(notificationId: string | null, userId: string) {
   return prisma.notification.updateMany({
-    where: { id: notificationId, userId },
+    where: notificationId ? { id: notificationId, userId } : { userId, isRead: false },
     data: { isRead: true },
   });
 }

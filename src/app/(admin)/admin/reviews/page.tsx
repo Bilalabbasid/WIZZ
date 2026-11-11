@@ -1,20 +1,10 @@
-import { getCurrentUser, requireRole } from "@/lib/auth";
-import { redirect } from "next/navigation";
+import { requireAdminPage } from "@/modules/admin/access";
 import { getAllReviewsForAdmin } from "@/modules/reviews/services";
 import { AdminReviewsView } from "@/components/admin-reviews-view";
 import { Star } from "lucide-react";
 
 export default async function AdminReviewsPage() {
-  try {
-    await requireRole([
-      "PLATFORM_SUPER_ADMIN",
-      "PLATFORM_CATALOG_ADMIN",
-      "PLATFORM_SUPPORT",
-    ]);
-  } catch {
-    redirect("/login?next=/admin/reviews");
-  }
-
+  await requireAdminPage("reviews", "/admin/reviews");
 
   const reviews = await getAllReviewsForAdmin();
 

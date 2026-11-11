@@ -35,7 +35,7 @@ export default async function SellerDashboardPage() {
       {/* Welcome Banner */}
       <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/90 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 mb-2">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-brand-50 text-brand-700 border border-brand-200 mb-2">
             <span>Merchant Operations</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
@@ -95,7 +95,7 @@ export default async function SellerDashboardPage() {
             {stats.ordersCount}
           </div>
           <p className="text-[11px] text-slate-400">
-            Pending Dispatch: <strong className="text-indigo-600">{stats.pendingOrdersCount} packages</strong>
+            Pending Dispatch: <strong className="text-brand-600">{stats.pendingOrdersCount} packages</strong>
           </p>
         </div>
 
@@ -103,7 +103,7 @@ export default async function SellerDashboardPage() {
         <div className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm space-y-2">
           <div className="flex items-center justify-between text-slate-500 text-xs font-bold uppercase tracking-wider">
             <span>Catalog Items</span>
-            <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-xl bg-brand-50 text-brand-600 flex items-center justify-center">
               <Layers size={16} />
             </div>
           </div>
@@ -143,7 +143,7 @@ export default async function SellerDashboardPage() {
             </div>
             <Link
               href="/seller/portal/orders"
-              className="text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1"
+              className="text-xs font-bold text-brand-600 hover:text-brand-700 flex items-center gap-1"
             >
               <span>View All Orders</span>
               <ArrowRight size={14} />
@@ -202,7 +202,7 @@ export default async function SellerDashboardPage() {
                       <td className="py-4 px-6 text-right">
                         <Link
                           href={`/seller/portal/orders/${o.id}`}
-                          className="font-bold text-indigo-600 hover:text-indigo-800"
+                          className="font-bold text-brand-600 hover:text-brand-800"
                         >
                           Manage &rarr;
                         </Link>
@@ -226,7 +226,7 @@ export default async function SellerDashboardPage() {
               </h2>
               <Link
                 href="/seller/portal/inventory?lowStock=true"
-                className="text-[11px] font-bold text-indigo-600 hover:underline"
+                className="text-[11px] font-bold text-brand-600 hover:underline"
               >
                 View all
               </Link>
@@ -271,7 +271,7 @@ export default async function SellerDashboardPage() {
                 className="flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 transition border border-slate-100 font-semibold text-slate-700"
               >
                 <div className="flex items-center gap-2">
-                  <Truck size={15} className="text-indigo-600" />
+                  <Truck size={15} className="text-brand-600" />
                   <span>Carrier Dispatch & Waybills</span>
                 </div>
                 <ArrowRight size={14} className="text-slate-400" />

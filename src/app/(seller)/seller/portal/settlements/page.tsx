@@ -7,13 +7,39 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { formatPkr } from "@/lib/formatters";
 
-export default function SellerSettlementsPage() {
-  const [statement, setStatement] = useState<any | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+type Minor = number | bigint;
 
-  useEffect(() => {
-    loadStatement();
-  }, []);
+interface SettlementLedger {
+  sellerOrderId: string;
+  sellerOrderNumber: string;
+  createdAt: string;
+  commissionRatePercent: number;
+  totalMinor: Minor;
+  platformCommissionMinor: Minor;
+  netSellerPayableMinor: Minor;
+  settlementStatus: string;
+}
+
+interface SettlementStatement {
+  summary: {
+    orderCount: number;
+    totalGrossGmvMinor: Minor;
+    totalPlatformCommissionMinor: Minor;
+    totalShippingMinor: Minor;
+    totalNetPayableMinor: Minor;
+  };
+  sellerOrg: {
+    commissionRatePercent: number;
+    bankName?: string | null;
+    bankAccountTitle?: string | null;
+    bankIban?: string | null;
+  };
+  ledgers: SettlementLedger[];
+}
+
+export default function SellerSettlementsPage() {
+  const [statement, setStatement] = useState<SettlementStatement | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   const loadStatement = async () => {
     setIsLoading(true);
@@ -29,6 +55,10 @@ export default function SellerSettlementsPage() {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    void Promise.resolve().then(loadStatement);
+  }, []);
 
   if (isLoading) {
     return <div className="p-12 text-center text-xs text-slate-400">Loading settlement statements...</div>;
@@ -116,7 +146,7 @@ export default function SellerSettlementsPage() {
       {/* Settlement Bank Details Notice */}
       <div className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+          <div className="w-10 h-10 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center shrink-0">
             <Building2 size={20} />
           </div>
           <div>
@@ -131,7 +161,7 @@ export default function SellerSettlementsPage() {
 
         <Link
           href="/seller/portal/profile"
-          className="text-xs font-bold text-indigo-600 hover:text-indigo-800 underline self-start sm:self-auto"
+          className="text-xs font-bold text-brand-600 hover:text-brand-800 underline self-start sm:self-auto"
         >
           Update Bank Details
         </Link>
@@ -153,7 +183,7 @@ export default function SellerSettlementsPage() {
           <div>
             {/* Mobile Cards (Viewports < md) */}
             <div className="block md:hidden divide-y divide-slate-100">
-              {ledgers.map((l: any) => (
+              {ledgers.map((l) => (
                 <div key={l.sellerOrderId} className="p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <div>
@@ -208,7 +238,7 @@ export default function SellerSettlementsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-slate-700">
-                  {ledgers.map((l: any) => (
+                  {ledgers.map((l) => (
                     <tr key={l.sellerOrderId} className="hover:bg-slate-50/50 transition">
                       <td className="py-4 px-6 font-mono font-bold text-slate-900">
                         {l.sellerOrderNumber}

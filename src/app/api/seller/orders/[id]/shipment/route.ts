@@ -1,45 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
-import { getSellerContextForUser } from "@/modules/sellers/services";
 import { createSellerShipment } from "@/modules/sellers/order-services";
+import { FULFILLMENT_ROLES, requireSellerContext, sellerErrorResponse } from "@/modules/sellers/api-guard";
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+/** Seller dispatches a package with the courier's real tracking number. */
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const context = await getSellerContextForUser(user.id);
-    if (!context?.sellerOrg) {
-      return NextResponse.json({ error: "No seller organization found for this user." }, { status: 404 });
-    }
-
+    const { sellerOrg, user } = await requireSellerContext({ roles: FULFILLMENT_ROLES, roleLabel: "dispatch orders" });
     const { id } = await params;
-    const body = await req.json();
-    const { carrierName, trackingNumber, trackingUrl } = body;
+    const { carrierName, trackingNumber, trackingUrl } = await req.json().catch(() => ({}));
 
     if (!carrierName || !trackingNumber) {
-      return NextResponse.json(
-        { error: "carrierName and trackingNumber are required." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Choose the courier and enter its tracking number." }, { status: 400 });
     }
 
-    const shipment = await createSellerShipment(
-      context.sellerOrg.id,
-      id,
-      { carrierName, trackingNumber, trackingUrl },
-      user.id
-    );
-
+    const shipment = await createSellerShipment(sellerOrg.id, id, { carrierName, trackingNumber, trackingUrl }, user.id);
     return NextResponse.json({ success: true, shipment });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Error creating shipment";
-    const status = message.includes("FORBIDDEN") ? 403 : 400;
-    return NextResponse.json({ error: message }, { status });
+    return sellerErrorResponse(err, "Could not create the shipment.");
   }
 }

@@ -17,28 +17,36 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 
+interface InventoryItem {
+  id: string;
+  variantId: string;
+  sku: string;
+  productTitle: string;
+  variantTitle: string;
+  availableUnits: number;
+  reservedUnits: number;
+  lowStockThreshold: number;
+  isLowStock: boolean;
+}
+
 export default function SellerInventoryPage() {
   const searchParams = useSearchParams();
   const initialLowStock = searchParams.get("lowStock") === "true";
 
-  const [items, setItems] = useState<any[]>([]);
+  const [items, setItems] = useState<InventoryItem[]>([]);
   const [total, setTotal] = useState(0);
   const [lowStockFilter, setLowStockFilter] = useState(initialLowStock);
   const [search, setSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
   // Adjustment modal state
-  const [selectedVariant, setSelectedVariant] = useState<any | null>(null);
+  const [selectedVariant, setSelectedVariant] = useState<InventoryItem | null>(null);
   const [deltaUnits, setDeltaUnits] = useState<number>(5);
   const [reasonCode, setReasonCode] = useState<string>("RECEIVING");
   const [notes, setNotes] = useState<string>("");
   const [isAdjusting, setIsAdjusting] = useState<boolean>(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    loadInventory();
-  }, [lowStockFilter]);
 
   const loadInventory = async () => {
     setIsLoading(true);
@@ -59,6 +67,10 @@ export default function SellerInventoryPage() {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    void Promise.resolve().then(loadInventory);
+  }, [lowStockFilter]);
 
   const handleAdjustSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -261,7 +273,7 @@ export default function SellerInventoryPage() {
                       </td>
                       <td className="py-4 px-4 font-mono text-slate-500">
                         {it.reservedUnits > 0 ? (
-                          <span className="text-indigo-600 font-bold">
+                          <span className="text-brand-600 font-bold">
                             {it.reservedUnits} held
                           </span>
                         ) : (
@@ -339,7 +351,7 @@ export default function SellerInventoryPage() {
                   required
                   value={deltaUnits}
                   onChange={(e) => setDeltaUnits(Number(e.target.value))}
-                  className="w-full rounded-xl border border-slate-300 p-2.5 font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="w-full rounded-xl border border-slate-300 p-2.5 font-bold focus:ring-2 focus:ring-brand-500 outline-none"
                 />
                 <span className="text-[11px] text-slate-400 mt-1 block">
                   New Balance will be: <strong>{selectedVariant.availableUnits + Number(deltaUnits)} units</strong>
@@ -353,7 +365,7 @@ export default function SellerInventoryPage() {
                 <select
                   value={reasonCode}
                   onChange={(e) => setReasonCode(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 p-2.5 bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="w-full rounded-xl border border-slate-300 p-2.5 bg-white focus:ring-2 focus:ring-brand-500 outline-none"
                 >
                   <option value="RECEIVING">RECEIVING (New shipment / Restock)</option>
                   <option value="CYCLE_COUNT">CYCLE_COUNT (Physical inventory audit)</option>
@@ -371,7 +383,7 @@ export default function SellerInventoryPage() {
                   placeholder="e.g. PO-8840 received from warehouse"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 p-2.5 outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full rounded-xl border border-slate-300 p-2.5 outline-none focus:ring-2 focus:ring-brand-500"
                 />
               </div>
 

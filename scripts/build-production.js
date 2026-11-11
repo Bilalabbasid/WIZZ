@@ -24,13 +24,43 @@ const runDeploySteps =
   process.env.WIZZ_SKIP_DEPLOY_STEPS !== "1" &&
   (process.argv.includes("--deploy") || process.env.WIZZ_DEPLOY === "1" || process.env.NODE_ENV === "production");
 
-function run(label, command, args) {
-  console.log(`\n[build] ${label}`);
-  const res = spawnSync(command, args, { cwd: root, env, stdio: "inherit" });
-  if (res.status !== 0) {
+function run(label, command, args, options = {}) {
+  const attempts = options.attempts || 1;
+  const childEnv = options.env || env;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    console.log(`\n[build] ${label}${attempts > 1 ? ` (attempt ${attempt}/${attempts})` : ""}`);
+    const res = spawnSync(command, args, { cwd: root, env: childEnv, stdio: "inherit" });
+    if (res.status === 0) return;
+    if (attempt < attempts) {
+      // Usually a busy connection pooler ("max clients reached"): wait for connections to free up
+      const waitMs = 10000 * attempt;
+      console.warn(`[build] ${label} failed; retrying in ${waitMs / 1000}s (database may be busy)...`);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, waitMs);
+      continue;
+    }
     console.error(`[build] FAILED: ${label}`);
     process.exit(res.status ?? 1);
   }
+}
+
+/**
+ * Deploy steps open their own database connections while the live site is still running.
+ * Hosted poolers (Supabase session mode: 15 clients) fill up quickly, so each step uses a
+ * single connection.
+ */
+function singleConnectionEnv() {
+  const raw = env.DATABASE_URL;
+  const next = { ...env, DB_CONNECTION_LIMIT: "1" };
+  if (!raw) return next;
+  try {
+    const url = new URL(raw);
+    url.searchParams.set("connection_limit", "1");
+    if (!url.searchParams.has("pool_timeout")) url.searchParams.set("pool_timeout", "30");
+    next.DATABASE_URL = url.toString();
+  } catch {
+    // leave unparsable URLs to the env check, which reports them clearly
+  }
+  return next;
 }
 
 // Resolve the project's own CLIs (never `npx`, which could download a different version)
@@ -50,13 +80,15 @@ if (runDeploySteps) {
   const tsxCli = localBin("tsx/cli", "the tsx package");
   run("Checking environment variables", node, [path.join(__dirname, "check-deploy-env.js")]);
   run("Generating Prisma client", node, [prismaCli, "generate"]);
-  run("Updating database schema (no data loss)", node, [prismaCli, "db", "push", "--skip-generate"]);
-  run("Bootstrapping store, categories and admin", node, [tsxCli, path.join("scripts", "bootstrap-production.ts")]);
+  const dbEnv = singleConnectionEnv();
+  run("Updating database schema (no data loss)", node, [prismaCli, "db", "push", "--skip-generate"], { env: dbEnv, attempts: 4 });
+  run("Bootstrapping store, categories and admin", node, [tsxCli, path.join("scripts", "bootstrap-production.ts")], { env: dbEnv, attempts: 4 });
 } else {
   console.log("[build] Deploy steps skipped (not a production build). Set NODE_ENV=production or pass --deploy to run them.");
 }
 
 const nextBin = require.resolve("next/dist/bin/next", { paths: [root] });
-run("next build --webpack (low-resource mode)", node, [nextBin, "build", "--webpack"]);
+// Pages are rendered on request, but keep any build-time queries to a small pool too
+run("next build --webpack (low-resource mode)", node, [nextBin, "build", "--webpack"], { env: { ...env, DB_CONNECTION_LIMIT: "2" } });
 run("Copying static assets into standalone output", node, [path.join(__dirname, "copy-standalone-assets.js")]);
 console.log("\n[build] Done.");

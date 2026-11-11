@@ -1,86 +1,60 @@
 import { prisma } from "@/lib/db";
-import { ShipmentStatus, SellerOrderStatus, CustomerOrderStatus } from "@prisma/client";
+import { ShipmentStatus } from "@prisma/client";
+import { createSellerShipment } from "@/modules/sellers/order-services";
+import { markSellerOrderDelivered } from "@/modules/orders/lifecycle";
 
+/**
+ * Platform-side dispatch (admin, or the first-party store team) for any seller package.
+ * Uses the same rules as the seller portal: only CONFIRMED/PACKING packages, one shipment.
+ */
 export async function createShipment(
   sellerOrderId: string,
   carrierName: string,
   trackingNumber: string,
-  trackingUrl?: string
+  trackingUrl?: string,
+  actorUserId?: string
 ) {
-  return prisma.$transaction(async (tx) => {
-    const shipment = await tx.shipment.create({
-      data: {
-        sellerOrderId,
-        carrierName,
-        trackingNumber,
-        trackingUrl: trackingUrl || null,
-        status: ShipmentStatus.LABEL_CREATED,
-        events: {
-          create: {
-            status: ShipmentStatus.LABEL_CREATED,
-            note: `Shipping label created with ${carrierName}. Tracking: ${trackingNumber}`,
-          },
-        },
-      },
-    });
-
-    // Update seller order status to DISPATCHED
-    await tx.sellerOrder.update({
-      where: { id: sellerOrderId },
-      data: { status: SellerOrderStatus.DISPATCHED },
-    });
-
-    // Check if customer order should be marked PARTIALLY_SHIPPED or SHIPPED
-    const sellerOrder = await tx.sellerOrder.findUnique({
-      where: { id: sellerOrderId },
-      select: { customerOrderId: true },
-    });
-
-    if (sellerOrder) {
-      await tx.customerOrder.update({
-        where: { id: sellerOrder.customerOrderId },
-        data: { status: CustomerOrderStatus.SHIPPED },
-      });
-    }
-
-    return shipment;
-  });
+  const so = await prisma.sellerOrder.findUnique({ where: { id: sellerOrderId }, select: { sellerOrgId: true } });
+  if (!so) throw new Error("Seller order not found.");
+  return createSellerShipment(so.sellerOrgId, sellerOrderId, { carrierName, trackingNumber, trackingUrl }, actorUserId);
 }
 
+const MILESTONES: ShipmentStatus[] = [
+  ShipmentStatus.IN_TRANSIT,
+  ShipmentStatus.OUT_FOR_DELIVERY,
+  ShipmentStatus.DELIVERED,
+  ShipmentStatus.FAILED_DELIVERY,
+];
+
+/**
+ * Records a courier tracking update. DELIVERED also completes the package (escrow release,
+ * parent order status) through markSellerOrderDelivered.
+ */
 export async function addShipmentMilestone(
   shipmentId: string,
   status: ShipmentStatus,
   location?: string,
   note?: string
 ) {
+  if (!MILESTONES.includes(status)) throw new Error("VALIDATION: Unknown shipment update.");
   return prisma.$transaction(async (tx) => {
-    await tx.shipmentEvent.create({
-      data: {
-        shipmentId,
-        status,
-        location: location || null,
-        note: note || null,
-      },
-    });
+    const shipment = await tx.shipment.findUnique({ where: { id: shipmentId } });
+    if (!shipment) throw new Error("Shipment not found.");
+    if (shipment.status === ShipmentStatus.DELIVERED) {
+      throw new Error("VALIDATION: This shipment has already been delivered.");
+    }
 
-    const isDelivered = status === ShipmentStatus.DELIVERED;
+    if (status === ShipmentStatus.DELIVERED) {
+      await markSellerOrderDelivered(tx, shipment.sellerOrderId, note || (location ? `Delivered (${location})` : undefined));
+      return tx.shipment.findUniqueOrThrow({ where: { id: shipmentId } });
+    }
 
-    const shipment = await tx.shipment.update({
+    return tx.shipment.update({
       where: { id: shipmentId },
       data: {
         status,
-        deliveredAt: isDelivered ? new Date() : undefined,
+        events: { create: { status, location: location || null, note: note || null } },
       },
-      include: { sellerOrder: true },
     });
-
-    if (isDelivered) {
-      await tx.sellerOrder.update({
-        where: { id: shipment.sellerOrderId },
-        data: { status: SellerOrderStatus.DELIVERED },
-      });
-    }
-
-    return shipment;
   });
 }

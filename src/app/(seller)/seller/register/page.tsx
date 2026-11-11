@@ -84,7 +84,7 @@ export default function SellerRegisterPage() {
             {/* Store Information */}
             <div className="space-y-4">
               <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
-                <Building2 size={16} className="text-indigo-600" />
+                <Building2 size={16} className="text-brand-600" />
                 <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800">
                   Store & Business Identity
                 </h2>
@@ -114,7 +114,7 @@ export default function SellerRegisterPage() {
                   <select
                     value={formData.city}
                     onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                    className="w-full text-xs rounded-xl border border-slate-300 p-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full text-xs rounded-xl border border-slate-300 p-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
                   >
                     <option value="Karachi">Karachi</option>
                     <option value="Lahore">Lahore</option>
@@ -141,7 +141,7 @@ export default function SellerRegisterPage() {
             {/* Merchant Account Login Credentials */}
             <div className="space-y-4 pt-2">
               <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
-                <UserCheck size={16} className="text-indigo-600" />
+                <UserCheck size={16} className="text-brand-600" />
                 <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800">
                   Primary Merchant Account Login
                 </h2>
@@ -195,7 +195,7 @@ export default function SellerRegisterPage() {
             <Button
               type="submit"
               size="lg"
-              className="w-full shadow-lg shadow-indigo-600/20"
+              className="w-full shadow-lg shadow-brand-600/20"
               isLoading={isLoading}
               disabled={isLoading}
             >
@@ -215,12 +215,12 @@ export default function SellerRegisterPage() {
         {/* Value Prop Badges */}
         <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
           <div className="p-4 rounded-2xl bg-white border border-slate-200/80 space-y-1">
-            <Truck size={20} className="mx-auto text-indigo-600" />
+            <Truck size={20} className="mx-auto text-brand-600" />
             <h3 className="font-bold text-xs text-slate-900">Nationwide Fulfillment</h3>
             <p className="text-[11px] text-slate-500">Integrated COD with TCS, Leopards, Trax, PostEx</p>
           </div>
           <div className="p-4 rounded-2xl bg-white border border-slate-200/80 space-y-1">
-            <ShieldCheck size={20} className="mx-auto text-emerald-600" />
+            <ShieldCheck size={20} className="mx-auto text-brand-600" />
             <h3 className="font-bold text-xs text-slate-900">Encrypted KYC</h3>
             <p className="text-[11px] text-slate-500">Bank-grade private document compliance storage</p>
           </div>

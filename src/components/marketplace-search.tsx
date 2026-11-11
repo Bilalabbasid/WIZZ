@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import React, { useState, useEffect, useRef, useId } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { Search, ChevronDown, X, ArrowRight, Tag, Package } from "lucide-react";
+import { Search, ChevronDown, X, ArrowRight, Package } from "lucide-react";
 import { formatCurrency } from "@/lib/formatters";
 
 export interface SearchCategoryItem {
@@ -27,12 +27,19 @@ export interface MarketplaceSearchProps {
   categories: SearchCategoryItem[];
   defaultCategory?: string;
   defaultQuery?: string;
+  /** Show the department select inside the pill (wide screens only). */
+  showCategorySelect?: boolean;
 }
 
+/**
+ * Compact header search pill (white, 1px hairline, 44px, fully rounded) with live
+ * suggestions from /api/search/suggest. Submitting goes to /search?q=…&category=….
+ */
 export function MarketplaceSearch({
   categories,
   defaultCategory = "",
   defaultQuery = "",
+  showCategorySelect = true,
 }: MarketplaceSearchProps) {
   const router = useRouter();
   const [query, setQuery] = useState(defaultQuery);
@@ -41,6 +48,8 @@ export function MarketplaceSearch({
   const [suggestedCategories, setSuggestedCategories] = useState<SearchCategoryItem[]>([]);
   const [suggestedProducts, setSuggestedProducts] = useState<SuggestedProduct[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const popoverId = useId();
+  const inputId = useId();
 
   const wrapperRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -65,32 +74,33 @@ export function MarketplaceSearch({
     };
   }, []);
 
-  // Fetch suggestions with debounce
+  // Fetch suggestions with debounce. Stale responses (from an older query) are ignored.
   useEffect(() => {
-    if (!query.trim() || query.length < 2) {
-      setSuggestedCategories([]);
-      setSuggestedProducts([]);
-      setIsLoading(false);
-      return;
-    }
+    if (query.trim().length < 2) return;
 
+    const controller = new AbortController();
     const timer = setTimeout(async () => {
       setIsLoading(true);
       try {
-        const res = await fetch(`/api/search/suggest?q=${encodeURIComponent(query)}`);
+        const res = await fetch(`/api/search/suggest?q=${encodeURIComponent(query.trim())}`, {
+          signal: controller.signal,
+        });
         if (res.ok) {
           const data = await res.json();
           setSuggestedCategories(data.categories || []);
           setSuggestedProducts(data.products || []);
         }
       } catch {
-        // Ignore fetch errors
+        // Aborted or network error: keep the plain search form usable
       } finally {
-        setIsLoading(false);
+        if (!controller.signal.aborted) setIsLoading(false);
       }
     }, 150);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [query]);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -102,171 +112,176 @@ export function MarketplaceSearch({
     router.push(`/search?${params.toString()}`);
   };
 
-  const hasSuggestions = suggestedCategories.length > 0 || suggestedProducts.length > 0;
+  // Suggestions only apply to queries of 2+ characters; shorter input shows nothing
+  const hasQuery = query.trim().length >= 2;
+  const visibleCategories = hasQuery ? suggestedCategories : [];
+  const visibleProducts = hasQuery ? suggestedProducts : [];
+  const hasSuggestions = visibleCategories.length > 0 || visibleProducts.length > 0;
+  const showLoading = hasQuery && isLoading;
+  const popoverVisible = isOpen && (hasSuggestions || (hasQuery && !showLoading));
 
   return (
     <div ref={wrapperRef} className="relative w-full">
       <form
+        role="search"
+        action="/search"
+        method="GET"
         onSubmit={handleSubmit}
-        className="flex items-stretch w-full h-11 rounded-lg border-2 border-transparent focus-within:border-orange-400 transition-colors bg-white overflow-hidden"
+        className="flex items-center w-full h-11 rounded-full border border-line bg-white pl-4 pr-1 transition-colors hover:border-mute-2 focus-within:border-ink"
       >
-        {/* Category Dropdown (Desktop) */}
-        <div className="hidden md:flex items-center relative border-r border-slate-200 bg-slate-100 hover:bg-slate-200/70 transition-colors">
-          <select
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
-            className="appearance-none bg-transparent h-full max-w-[150px] truncate pl-3 pr-7 text-xs font-semibold text-slate-700 cursor-pointer focus:outline-none"
-            aria-label="Filter by department"
-          >
-            <option value="">All Categories</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.slug}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-          <ChevronDown
-            size={12}
-            className="absolute right-2 text-slate-400 pointer-events-none"
-          />
-        </div>
-
-        {/* Input */}
-        <div className="relative flex-1 flex items-center">
-          <input
-            ref={inputRef}
-            type="search"
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setIsOpen(true);
+        <label htmlFor={inputId} className="sr-only">
+          Search products and brands
+        </label>
+        <Search size={17} strokeWidth={1.7} className="text-ink flex-shrink-0" aria-hidden="true" />
+        <input
+          ref={inputRef}
+          id={inputId}
+          name="q"
+          type="search"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setIsOpen(true);
+          }}
+          onFocus={() => setIsOpen(true)}
+          placeholder="Search products and brands"
+          className="flex-1 min-w-0 h-full bg-transparent pl-2.5 pr-1 text-[15px] text-ink placeholder:text-mute focus:outline-none [&::-webkit-search-cancel-button]:hidden"
+          autoComplete="off"
+          aria-autocomplete="list"
+          aria-controls={popoverVisible ? popoverId : undefined}
+        />
+        {query && (
+          <button
+            type="button"
+            onClick={() => {
+              setQuery("");
+              inputRef.current?.focus();
             }}
-            onFocus={() => setIsOpen(true)}
-            placeholder="Search products and brands"
-            className="w-full h-full pl-3.5 pr-8 text-sm text-slate-900 placeholder:text-slate-500 focus:outline-none font-medium [&::-webkit-search-cancel-button]:hidden"
-            autoComplete="off"
-            aria-autocomplete="list"
-            aria-expanded={isOpen && hasSuggestions}
-          />
-          {query && (
-            <button
-              type="button"
-              onClick={() => {
-                setQuery("");
-                inputRef.current?.focus();
-              }}
-              className="absolute right-2.5 text-slate-400 hover:text-slate-600 p-0.5"
-              aria-label="Clear search input"
-            >
-              <X size={14} />
-            </button>
-          )}
-        </div>
+            className="size-9 rounded-full flex items-center justify-center text-mute hover:text-ink hover:bg-canvas flex-shrink-0"
+            aria-label="Clear search"
+          >
+            <X size={15} aria-hidden="true" />
+          </button>
+        )}
 
-        {/* Search Submit Button */}
+        {showCategorySelect && categories.length > 0 && (
+          <div className="hidden xl:flex items-center relative h-7 border-l border-line pl-1 flex-shrink-0">
+            <select
+              name="category"
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="appearance-none bg-transparent h-full max-w-[140px] truncate pl-2 pr-6 text-[13px] text-mute hover:text-ink cursor-pointer focus:outline-none focus-visible:text-ink"
+              aria-label="Search in category"
+            >
+              <option value="">All categories</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.slug}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            <ChevronDown size={13} className="absolute right-1.5 text-mute pointer-events-none" aria-hidden="true" />
+          </div>
+        )}
+
         <button
           type="submit"
-          className="bg-orange-600 hover:bg-orange-700 active:bg-orange-800 text-white w-12 sm:w-14 flex items-center justify-center transition-colors flex-shrink-0"
-          aria-label="Submit search"
+          className="ml-1 h-9 px-4 rounded-full bg-ink text-white text-[13px] font-medium hover:bg-ink-2 transition-colors flex-shrink-0"
         >
-          <Search size={18} />
+          Search
         </button>
       </form>
 
-      {/* Live Auto-Suggest Popover */}
-      {isOpen && (hasSuggestions || (query.length >= 2 && !isLoading)) && (
-        <div className="absolute top-full left-0 right-0 mt-1.5 bg-white rounded-xl border border-slate-200 shadow-xl overflow-hidden z-50 divide-y divide-slate-100 max-h-96 overflow-y-auto animate-in fade-in-50 duration-100">
-          {/* Matched Categories */}
-          {suggestedCategories.length > 0 && (
-            <div className="p-2.5 bg-slate-50/70">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2 block mb-1">
-                Matching Categories
-              </span>
-              <div className="space-y-0.5">
-                {suggestedCategories.map((c) => (
-                  <Link
-                    key={c.id}
-                    href={`/categories/${c.slug}`}
-                    onClick={() => setIsOpen(false)}
-                    className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-700 hover:bg-emerald-50 hover:text-emerald-800 transition-colors"
-                  >
-                    <span className="flex items-center gap-1.5">
-                      <Tag size={13} className="text-emerald-600" />
-                      {c.name}
-                    </span>
-                    <ArrowRight size={12} className="text-slate-400" />
-                  </Link>
-                ))}
-              </div>
+      {/* Live suggestions */}
+      {popoverVisible && (
+        <div
+          id={popoverId}
+          aria-label="Search suggestions"
+          role="region"
+          className="absolute top-full left-0 right-0 mt-2 bg-white rounded-[20px] border border-line-soft shadow-[0_24px_48px_-24px_rgba(14,14,13,0.35)] overflow-hidden z-50 max-h-[26rem] overflow-y-auto"
+        >
+          {visibleCategories.length > 0 && (
+            <div className="p-2 border-b border-line-soft">
+              <p className="px-3 pt-2 pb-1 font-mono text-[11px] uppercase tracking-[0.08em] text-mute">Categories</p>
+              {visibleCategories.map((c) => (
+                <Link
+                  key={c.id}
+                  href={`/categories/${c.slug}`}
+                  onClick={() => setIsOpen(false)}
+                  className="flex items-center justify-between gap-3 px-3 min-h-[40px] rounded-xl text-sm text-ink hover:bg-canvas transition-colors"
+                >
+                  <span className="truncate">{c.name}</span>
+                  <ArrowRight size={14} className="text-mute flex-shrink-0" aria-hidden="true" />
+                </Link>
+              ))}
             </div>
           )}
 
-          {/* Matched Products */}
-          {suggestedProducts.length > 0 && (
+          {visibleProducts.length > 0 && (
             <div className="p-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2 block mb-1">
-                Suggested Products
-              </span>
-              <div className="divide-y divide-slate-100">
-                {suggestedProducts.map((p) => (
-                  <Link
-                    key={p.id}
-                    href={`/products/${p.slug}`}
-                    onClick={() => setIsOpen(false)}
-                    className="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-50 transition-colors group"
-                  >
-                    <div className="w-10 h-10 rounded-lg bg-slate-100 border border-slate-200/80 overflow-hidden flex-shrink-0 flex items-center justify-center">
-                      {p.thumbnail ? (
-                        <img
-                          src={p.thumbnail}
-                          alt={p.title}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <Package size={16} className="text-slate-400" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="text-xs font-bold text-slate-900 group-hover:text-emerald-600 truncate transition-colors">
-                        {p.title}
-                      </h4>
-                      <p className="text-[11px] text-slate-400">
-                        in <span className="text-slate-600 font-medium">{p.categoryName}</span>
-                      </p>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <span className="text-xs font-extrabold text-slate-900 block">
-                        {formatCurrency(p.priceMinor)}
-                      </span>
-                    </div>
-                  </Link>
-                ))}
-              </div>
+              <p className="px-3 pt-2 pb-1 font-mono text-[11px] uppercase tracking-[0.08em] text-mute">Products</p>
+              {visibleProducts.map((p) => (
+                <Link
+                  key={p.id}
+                  href={`/products/${p.slug}`}
+                  onClick={() => setIsOpen(false)}
+                  className="flex items-center gap-3 p-2 rounded-xl hover:bg-canvas transition-colors"
+                >
+                  <span className="size-11 rounded-lg bg-sand overflow-hidden flex-shrink-0 flex items-center justify-center">
+                    {p.thumbnail ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- tiny suggestion thumbnail from arbitrary upload hosts
+                      <img src={p.thumbnail} alt="" width={44} height={44} className="w-full h-full object-cover" />
+                    ) : (
+                      <Package size={16} className="text-mute" aria-hidden="true" />
+                    )}
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-medium text-ink truncate">{p.title}</span>
+                    <span className="block text-xs text-mute truncate">{p.categoryName}</span>
+                  </span>
+                  <span className="font-mono text-[13px] text-ink whitespace-nowrap flex-shrink-0">
+                    {formatCurrency(p.priceMinor)}
+                  </span>
+                </Link>
+              ))}
             </div>
           )}
 
-          {/* View All Action */}
+          {!hasSuggestions && !showLoading && hasQuery && (
+            <p className="px-5 py-6 text-center text-sm text-mute">
+              No quick matches for &ldquo;{query.trim()}&rdquo;. Press Enter to search the whole catalogue.
+            </p>
+          )}
+
           {query.trim() && (
-            <div className="p-2 bg-slate-50">
+            <div className="p-2 border-t border-line-soft">
               <button
                 type="button"
                 onClick={handleSubmit}
-                className="w-full text-center text-xs font-bold text-emerald-700 hover:text-emerald-800 py-1.5 flex items-center justify-center gap-1.5"
+                className="w-full min-h-[40px] rounded-xl text-sm font-medium text-ink hover:bg-canvas flex items-center justify-center gap-1.5"
               >
-                <span>See all results for "{query}"</span>
-                <ArrowRight size={13} />
+                <span className="truncate">See all results for &ldquo;{query.trim()}&rdquo;</span>
+                <ArrowRight size={14} aria-hidden="true" />
               </button>
-            </div>
-          )}
-
-          {/* Empty State */}
-          {!hasSuggestions && !isLoading && query.length >= 2 && (
-            <div className="p-6 text-center text-slate-500 text-xs">
-              No immediate matches found for "{query}". Press Enter to perform full catalog search.
             </div>
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Header search that steps aside on the homepage, where the hero already has
+ * the large search form (used for the mobile header row).
+ */
+export function HeaderSearchOutsideHome(props: MarketplaceSearchProps & { className?: string }) {
+  const pathname = usePathname();
+  if (pathname === "/") return null;
+  const { className = "", ...rest } = props;
+  return (
+    <div className={className}>
+      <MarketplaceSearch {...rest} />
     </div>
   );
 }

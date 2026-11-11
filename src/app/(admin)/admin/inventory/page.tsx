@@ -1,7 +1,9 @@
+import { requireAdminPage } from "@/modules/admin/access";
 import { prisma } from "@/lib/db";
 import { AdminInventoryView } from "@/components/admin-inventory-view";
 
 export default async function AdminInventoryPage() {
+  await requireAdminPage("inventory", "/admin/inventory");
   const [variants, recentAdjustments] = await Promise.all([
     prisma.productVariant.findMany({
       orderBy: { sku: "asc" },
@@ -22,7 +24,7 @@ export default async function AdminInventoryPage() {
   return (
     <div className="space-y-8">
       <div>
-        <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider">
+        <span className="text-xs font-bold text-brand-400 uppercase tracking-wider">
           Warehouse & Operations
         </span>
         <h1 className="text-3xl font-black tracking-tight text-white mt-1">

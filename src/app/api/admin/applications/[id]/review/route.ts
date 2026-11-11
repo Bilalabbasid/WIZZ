@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { clientErrorMessage, clientErrorStatus } from "@/lib/api-error";
 import { requireRole } from "@/lib/auth";
 import { UserRole } from "@prisma/client";
 import { reviewSellerApplication } from "@/modules/sellers/services";
@@ -29,7 +30,7 @@ export async function POST(
 
     return NextResponse.json({ success: true, application });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Error reviewing application";
-    return NextResponse.json({ error: message }, { status: 400 });
+    const message = clientErrorMessage(err, "Error reviewing application");
+    return NextResponse.json({ error: message }, { status: clientErrorStatus(err) });
   }
 }

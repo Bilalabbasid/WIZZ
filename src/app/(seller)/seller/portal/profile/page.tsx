@@ -27,10 +27,6 @@ export default function SellerProfilePage() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchProfile();
-  }, []);
-
   const fetchProfile = async () => {
     try {
       const res = await fetch("/api/seller/profile");
@@ -43,6 +39,10 @@ export default function SellerProfilePage() {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    void Promise.resolve().then(fetchProfile);
+  }, []);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -125,7 +125,7 @@ export default function SellerProfilePage() {
         {/* Public Store Identity */}
         <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/90 shadow-sm space-y-6">
           <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
-            <Store size={18} className="text-indigo-600" />
+            <Store size={18} className="text-brand-600" />
             <h2 className="font-bold text-sm text-slate-900">Public Store Identity</h2>
           </div>
 
@@ -171,7 +171,7 @@ export default function SellerProfilePage() {
         {/* Fulfillment & Warehouse Address */}
         <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/90 shadow-sm space-y-6">
           <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
-            <MapPin size={18} className="text-indigo-600" />
+            <MapPin size={18} className="text-brand-600" />
             <h2 className="font-bold text-sm text-slate-900">Warehouse Fulfillment & Return Address</h2>
           </div>
 
@@ -187,7 +187,7 @@ export default function SellerProfilePage() {
               <select
                 value={profile.city || "Karachi"}
                 onChange={(e) => setProfile({ ...profile, city: e.target.value })}
-                className="w-full text-xs rounded-xl border border-slate-300 p-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full text-xs rounded-xl border border-slate-300 p-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
               >
                 <option value="Karachi">Karachi</option>
                 <option value="Lahore">Lahore</option>
@@ -251,7 +251,7 @@ export default function SellerProfilePage() {
             size="lg"
             isLoading={isSaving}
             disabled={isSaving}
-            className="shadow-md shadow-indigo-600/20"
+            className="shadow-md shadow-brand-600/20"
           >
             <Save size={16} />
             <span>Save Profile & Settlement Changes</span>

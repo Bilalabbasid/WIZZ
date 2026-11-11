@@ -1,12 +1,18 @@
 import type { Metadata, Viewport } from "next";
-import { Plus_Jakarta_Sans } from "next/font/google";
+import { Geist, Geist_Mono } from "next/font/google";
 import { SITE_CONFIG } from "@/lib/config";
 import "./globals.css";
 
-const jakarta = Plus_Jakarta_Sans({
+const geist = Geist({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800"],
-  variable: "--font-jakarta",
+  variable: "--font-geist",
+  display: "swap",
+});
+
+const geistMono = Geist_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  variable: "--font-geist-mono",
   display: "swap",
 });
 
@@ -19,18 +25,18 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_CONFIG.canonicalUrl),
   title: {
-    default: "WIZZ.PK — Authentic Hardware & Travel Equipment",
+    default: "WIZZ.PK — Shop online, pay on delivery",
     template: "%s | WIZZ.PK",
   },
-  description: "High-trust digital commerce platform delivering verified physical hardware, travel equipment, audio acoustics, and workspace essentials.",
-  keywords: ["WIZZ.PK", "hardware", "travel gear", "mechanical keyboard", "audio headphones", "authentic marketplace"],
+  description: "Shop electronics, home, kitchen, outdoor and fitness products from WIZZ.PK and verified Pakistani sellers. Cash on delivery across Pakistan.",
+  keywords: ["WIZZ.PK", "online shopping Pakistan", "cash on delivery", "marketplace", "electronics", "home and kitchen"],
   authors: [{ name: "WIZZ.PK" }],
   openGraph: {
-    title: "WIZZ.PK — High-Trust E-Commerce & Marketplace",
-    description: "Verified physical products with real inventory and reliable fulfillment.",
+    title: "WIZZ.PK — Shop online, pay on delivery",
+    description: "Products from WIZZ.PK and verified Pakistani sellers, with cash on delivery across Pakistan.",
     url: SITE_CONFIG.canonicalUrl,
     siteName: "WIZZ.PK",
-    locale: "en_US",
+    locale: "en_PK",
     type: "website",
   },
   robots: {
@@ -45,8 +51,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`h-full ${jakarta.variable}`}>
-      <body className="min-h-full flex flex-col bg-[var(--background)] text-slate-900 antialiased">
+    <html lang="en" className={`h-full ${geist.variable} ${geistMono.variable}`}>
+      <body className="min-h-full flex flex-col bg-canvas text-ink antialiased">
         {children}
       </body>
     </html>

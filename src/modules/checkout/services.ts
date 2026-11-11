@@ -15,6 +15,8 @@ import { Prisma } from "@prisma/client";
 import { createStockReservation, commitOrderReservations } from "../inventory/services";
 import { assertPaymentMethodAllowed } from "@/lib/payment-methods";
 import { enqueueJob } from "@/lib/jobs";
+import { notifySellerMembers } from "@/modules/orders/lifecycle";
+import { getCommerceSettings } from "@/lib/commerce-settings";
 
 export interface CheckoutAddress {
   fullName: string;
@@ -283,7 +285,8 @@ export async function calculateCheckoutTotals(
 
   const sellerDiscountMap = allocateProRataDiscount(discountMinor, sellerSubtotalEntries);
 
-  // 4. Per-Seller Shipping, Tax, and Line-Item Calculation
+  // 4. Per-Seller Shipping, Tax, and Line-Item Calculation (fees from Admin → Settings)
+  const commerce = await getCommerceSettings();
   let totalShippingMinor = 0;
   let totalTaxMinor = 0;
   const sellerPackages: SellerPackageCalculation[] = [];
@@ -298,12 +301,10 @@ export async function calculateCheckoutTotals(
     // Standard tier: free if seller subtotal >= threshold, otherwise per-seller standard fee
     let sellerShipping = 0;
     if (shippingTier === "EXPRESS") {
-      sellerShipping = SITE_CONFIG.shipping.expressRateMinor;
+      sellerShipping = commerce.expressShippingMinor;
     } else {
       sellerShipping =
-        groupSubtotal >= SITE_CONFIG.shipping.freeShippingThresholdMinor
-          ? 0
-          : SITE_CONFIG.shipping.standardRateMinor;
+        groupSubtotal >= commerce.freeShippingThresholdMinor ? 0 : commerce.standardShippingMinor;
     }
     totalShippingMinor += sellerShipping;
 
@@ -466,7 +467,7 @@ export async function placeOrder(input: PlaceOrderInput) {
   try {
     // 2. Authoritatively calculate totals on the server (never from the browser).
     const totals = await calculateCheckoutTotals(cartId, couponCode, shippingTier);
-    const method = assertPaymentMethodAllowed(paymentMethod, totals.totalMinor);
+    const method = assertPaymentMethodAllowed(paymentMethod, totals.totalMinor, (await getCommerceSettings()).codMaxOrderMinor);
     const isCod = method === "CASH_ON_DELIVERY";
 
     if (couponCode && couponCode.trim() && !totals.appliedCoupon) {
@@ -693,6 +694,14 @@ async function createOrderTransaction(args: {
               amountExpectedMinor: pkg.totalMinor,
               notes: `Internal COD collection reference for suborder ${sellerOrderNumber}. Not a courier tracking number.`,
             },
+          });
+
+          // COD packages are ready to fulfil now; online ones are announced on payment capture
+          await notifySellerMembers(tx, pkg.sellerOrgId, {
+            title: "New order to fulfil",
+            message: `Package ${sellerOrderNumber}: ${pkg.items.reduce((n, i) => n + i.quantity, 0)} item(s), cash on delivery. Pack and dispatch it from Orders.`,
+            type: "ORDER",
+            linkUrl: `/seller/portal/orders/${sellerOrder.id}`,
           });
         }
       }

@@ -74,3 +74,14 @@ export function checkRateLimit(
 export function resetRateLimit(key: string): void {
   store.delete(key);
 }
+
+/**
+ * Client IP for rate limiting. Clients can put anything at the START of X-Forwarded-For,
+ * so use the address our own reverse proxy saw: X-Real-IP, else the LAST X-Forwarded-For hop.
+ */
+export function clientIpFrom(headers: Headers): string {
+  const real = headers.get("x-real-ip")?.trim();
+  if (real) return real;
+  const hops = (headers.get("x-forwarded-for") || "").split(",").map((h) => h.trim()).filter(Boolean);
+  return hops[hops.length - 1] || "unknown-ip";
+}

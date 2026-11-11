@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib/formatters";
-import { Boxes, Plus, Minus, AlertCircle, CheckCircle2, History } from "lucide-react";
+import { AlertCircle, History } from "lucide-react";
 
 export interface VariantInventoryItem {
   id: string;
@@ -113,7 +113,7 @@ export function AdminInventoryView({
                       <span className="font-bold text-white block">{v.product.title}</span>
                       <span className="text-slate-400 text-[11px]">{v.title}</span>
                     </td>
-                    <td className="py-3.5 font-mono text-indigo-300">{v.sku}</td>
+                    <td className="py-3.5 font-mono text-brand-300">{v.sku}</td>
                     <td className="py-3.5 text-center font-bold text-white">{avail}</td>
                     <td className="py-3.5 text-center text-amber-400 font-semibold">{reserved}</td>
                     <td className="py-3.5 text-center">
@@ -144,7 +144,7 @@ export function AdminInventoryView({
       {/* Recent Inventory Adjustment Logs */}
       <div className="bg-slate-800/80 rounded-3xl border border-slate-700/80 p-6 space-y-4">
         <div className="flex items-center gap-2 pb-3 border-b border-slate-700">
-          <History size={16} className="text-indigo-400" />
+          <History size={16} className="text-brand-400" />
           <h3 className="font-bold text-sm text-white">Stock Adjustment Audit Log</h3>
         </div>
 

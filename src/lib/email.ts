@@ -121,7 +121,7 @@ export async function buildOrderEmail(
         `<table style="width:100%;font-size:14px;border-collapse:collapse">${rowsHtml}
 <tr><td style="padding-top:10px;border-top:1px solid #e2e8f0"><strong>Total</strong></td><td style="padding-top:10px;border-top:1px solid #e2e8f0;text-align:right"><strong>${escapeHtml(formatCurrency(order.totalMinor))}</strong></td></tr></table>
 <p style="font-size:14px">${escapeHtml(payLine)}</p>
-<p><a href="${escapeHtml(link)}" style="display:inline-block;background:#047857;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:700">View order</a></p>`
+<p><a href="${escapeHtml(link)}" style="display:inline-block;background:#3a47e0;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:700">View order</a></p>`
       ),
     };
   }
@@ -136,7 +136,7 @@ export async function buildOrderEmail(
       `Order ${order.orderNumber} has shipped`,
       `<p style="font-size:14px">Handed to <strong>${escapeHtml(carrier)}</strong>. Tracking number: <strong>${escapeHtml(tracking)}</strong>.</p>
 ${extra?.trackingUrl ? `<p><a href="${escapeHtml(extra.trackingUrl)}">Track on the carrier website</a></p>` : ""}
-<p><a href="${escapeHtml(link)}" style="display:inline-block;background:#047857;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:700">View order</a></p>`
+<p><a href="${escapeHtml(link)}" style="display:inline-block;background:#3a47e0;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:700">View order</a></p>`
     ),
   };
 }

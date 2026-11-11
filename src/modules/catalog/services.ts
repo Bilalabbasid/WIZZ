@@ -1,9 +1,25 @@
 import { prisma } from "@/lib/db";
 import { Prisma, ProductStatus } from "@prisma/client";
-import { SITE_CONFIG } from "@/lib/config";
+import { getCommerceSettings } from "@/lib/commerce-settings";
+
+/**
+ * The single public-visibility rule for products: published, approved by the
+ * platform, and sold by an active seller. Every storefront read (listings,
+ * product page, search suggestions, cart) must apply it.
+ */
+export const publicProductWhere = {
+  status: ProductStatus.PUBLISHED,
+  isApprovedByPlatform: true,
+  sellerOrg: { operationalStatus: "ACTIVE" },
+} satisfies Prisma.ProductWhereInput;
+
+export const PRODUCT_SORTS = ["featured", "price_asc", "price_desc", "newest", "rating"] as const;
+export type ProductSort = (typeof PRODUCT_SORTS)[number];
 
 export interface ProductFilterOptions {
   categorySlug?: string;
+  /** Explicit category id set (e.g. a category plus its descendants). Takes precedence over categorySlug. */
+  categoryIds?: string[];
   query?: string;
   brandSlug?: string;
   sellerOrgSlug?: string;
@@ -13,9 +29,61 @@ export interface ProductFilterOptions {
   minRating?: number;
   dealsOnly?: boolean;
   freeShippingOnly?: boolean;
-  sort?: "featured" | "price_asc" | "price_desc" | "newest" | "rating";
+  sort?: ProductSort;
   page?: number;
   limit?: number;
+}
+
+type RawParam = string | string[] | undefined;
+
+function firstParam(v: RawParam): string | undefined {
+  const s = Array.isArray(v) ? v[0] : v;
+  return typeof s === "string" && s.trim() !== "" ? s.trim() : undefined;
+}
+
+// Prisma Int columns are 32-bit; keep price bounds well inside that range.
+const MAX_PRICE_MINOR = 2_000_000_000;
+const MAX_PAGE = 10_000;
+
+function parsePriceToMinor(v: RawParam): number | undefined {
+  const s = firstParam(v);
+  if (s === undefined) return undefined;
+  const n = Number(s);
+  if (!Number.isFinite(n) || n < 0) return undefined;
+  return Math.min(Math.round(n * 100), MAX_PRICE_MINOR);
+}
+
+/**
+ * Turns untrusted listing query-string values into safe filter options.
+ * Non-numeric, negative or out-of-range values are dropped instead of being
+ * passed to Prisma (where NaN would throw).
+ */
+export function parseListingParams(params: {
+  page?: RawParam;
+  minPrice?: RawParam;
+  maxPrice?: RawParam;
+  rating?: RawParam;
+  sort?: RawParam;
+}) {
+  const rawPage = Number(firstParam(params.page) ?? "1");
+  const page = Number.isFinite(rawPage) ? Math.min(Math.max(1, Math.floor(rawPage)), MAX_PAGE) : 1;
+
+  let minPriceMinor = parsePriceToMinor(params.minPrice);
+  let maxPriceMinor = parsePriceToMinor(params.maxPrice);
+  if (minPriceMinor !== undefined && maxPriceMinor !== undefined && minPriceMinor > maxPriceMinor) {
+    [minPriceMinor, maxPriceMinor] = [maxPriceMinor, minPriceMinor];
+  }
+
+  const rawRating = Number(firstParam(params.rating));
+  const minRating =
+    Number.isInteger(rawRating) && rawRating >= 1 && rawRating <= 5 ? rawRating : undefined;
+
+  const rawSort = firstParam(params.sort);
+  const sort = (PRODUCT_SORTS as readonly string[]).includes(rawSort ?? "")
+    ? (rawSort as ProductSort)
+    : undefined;
+
+  return { page, minPriceMinor, maxPriceMinor, minRating, sort };
 }
 
 export async function getCategories() {
@@ -25,13 +93,7 @@ export async function getCategories() {
     include: {
       _count: {
         select: {
-          products: {
-            where: {
-              status: ProductStatus.PUBLISHED,
-              isApprovedByPlatform: true,
-              sellerOrg: { operationalStatus: "ACTIVE" },
-            },
-          },
+          products: { where: publicProductWhere },
         },
       },
     },
@@ -43,32 +105,61 @@ export async function getCategoryBySlug(slug: string) {
     where: { slug },
     include: {
       parent: true,
-      children: { where: { isActive: true } },
+      children: { where: { isActive: true }, orderBy: { displayOrder: "asc" } },
     },
   });
 }
 
 /**
- * Returns available filter metadata (brands, price boundaries) scoped to a category.
+ * Resolves an active category slug to its id plus the ids of all active
+ * descendants (so a parent category lists its sub-categories' products).
+ * Returns null when the category does not exist or is inactive.
+ */
+export async function getCategoryTreeIds(slug: string): Promise<string[] | null> {
+  const all = await prisma.category.findMany({
+    where: { isActive: true },
+    select: { id: true, slug: true, parentId: true },
+  });
+  const root = all.find((c) => c.slug === slug);
+  if (!root) return null;
+
+  const childrenByParent = new Map<string, string[]>();
+  for (const c of all) {
+    if (!c.parentId) continue;
+    const list = childrenByParent.get(c.parentId) ?? [];
+    list.push(c.id);
+    childrenByParent.set(c.parentId, list);
+  }
+
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  const queue = [root.id];
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    if (seen.has(id)) continue; // guard against accidental cycles
+    seen.add(id);
+    ids.push(id);
+    queue.push(...(childrenByParent.get(id) ?? []));
+  }
+  return ids;
+}
+
+/**
+ * Returns available filter metadata (brands, price boundaries) scoped to a category
+ * and its active descendants. Returns null for missing or inactive categories.
  */
 export async function getCategoryFilterMetadata(categorySlug: string) {
-  const category = await prisma.category.findUnique({
-    where: { slug: categorySlug },
-    include: {
-      parent: true,
-      children: { where: { isActive: true } },
-    },
-  });
+  const category = await getCategoryBySlug(categorySlug);
+  if (!category || !category.isActive) return null;
 
-  if (!category) return null;
+  const categoryIds = (await getCategoryTreeIds(categorySlug)) ?? [category.id];
 
-  // Retrieve brands associated with products in this category
+  // Retrieve brands associated with publicly listed products in this category tree
   const productsInCategory = await prisma.product.findMany({
     where: {
-      categoryId: category.id,
-      status: ProductStatus.PUBLISHED,
-      isApprovedByPlatform: true,
-      sellerOrg: { operationalStatus: "ACTIVE" },
+      ...publicProductWhere,
+      categoryId: { in: categoryIds },
+      media: { some: {} },
     },
     select: {
       brand: true,
@@ -106,6 +197,7 @@ export async function getCategoryFilterMetadata(categorySlug: string) {
 
   return {
     category,
+    categoryIds,
     subcategories: category.children,
     availableBrands: Array.from(brandMap.values()).sort((a, b) => a.name.localeCompare(b.name)),
     priceRange: {
@@ -119,11 +211,9 @@ export async function getCategoryFilterMetadata(categorySlug: string) {
 export async function getFeaturedProducts(limit: number = 8) {
   return prisma.product.findMany({
     where: {
-      status: ProductStatus.PUBLISHED,
-      isApprovedByPlatform: true,
+      ...publicProductWhere,
       featured: true,
       media: { some: {} },
-      sellerOrg: { operationalStatus: "ACTIVE" },
     },
     take: limit,
     orderBy: { createdAt: "desc" },
@@ -134,18 +224,25 @@ export async function getFeaturedProducts(limit: number = 8) {
       media: { orderBy: { displayOrder: "asc" } },
       variants: {
         where: { isActive: true },
-        include: { inventoryLevel: true },
+        omit: { costPriceMinor: true }, // seller cost never leaves the server
+          include: { inventoryLevel: { select: { availableUnits: true, reservedUnits: true, lowStockThreshold: true, safetyStock: true } } },
       },
     },
   });
 }
 
+/** Repeated query-string keys arrive as arrays; only plain strings are usable filters. */
+function asString(v: unknown): string | undefined {
+  return typeof v === "string" && v.trim() !== "" ? v : undefined;
+}
+
 export async function getProducts(options: ProductFilterOptions = {}) {
+  const categorySlug = asString(options.categorySlug);
+  const query = asString(options.query);
+  const brandSlug = asString(options.brandSlug);
+  const sellerOrgSlug = asString(options.sellerOrgSlug);
   const {
-    categorySlug,
-    query,
-    brandSlug,
-    sellerOrgSlug,
+    categoryIds,
     minPriceMinor,
     maxPriceMinor,
     inStockOnly,
@@ -158,14 +255,16 @@ export async function getProducts(options: ProductFilterOptions = {}) {
   } = options;
 
   const whereClause: Record<string, unknown> = {
-    status: ProductStatus.PUBLISHED,
-    isApprovedByPlatform: true,
+    ...publicProductWhere,
     media: { some: {} },
-    sellerOrg: { operationalStatus: "ACTIVE" },
   };
 
-  if (categorySlug) {
-    whereClause.category = { slug: categorySlug };
+  if (categoryIds) {
+    whereClause.categoryId = { in: categoryIds };
+  } else if (categorySlug) {
+    // A category lists its own products plus those of its active sub-categories.
+    // Unknown or inactive categories resolve to an empty id set (no results).
+    whereClause.categoryId = { in: (await getCategoryTreeIds(categorySlug)) ?? [] };
   }
 
   if (brandSlug) {
@@ -177,12 +276,15 @@ export async function getProducts(options: ProductFilterOptions = {}) {
   }
 
   if (minRating !== undefined && minRating > 0) {
-    whereClause.reviews = {
-      some: {
-        rating: { gte: minRating },
-        isApproved: true,
-      },
-    };
+    // "N stars & up" means the average of approved reviews is at least N,
+    // not that any single review reached N.
+    const rated = await prisma.review.groupBy({
+      by: ["productId"],
+      where: { isApproved: true },
+      _avg: { rating: true },
+      having: { rating: { _avg: { gte: minRating } } },
+    });
+    whereClause.id = { in: rated.map((r) => r.productId) };
   }
 
   if (query && query.trim().length > 0) {
@@ -205,9 +307,10 @@ export async function getProducts(options: ProductFilterOptions = {}) {
   }
 
   if (freeShippingOnly) {
+    const { freeShippingThresholdMinor } = await getCommerceSettings();
     variantFilter.priceMinor = {
       ...((variantFilter.priceMinor as Record<string, number>) || {}),
-      gte: Math.max(SITE_CONFIG.shipping.freeShippingThresholdMinor, minPriceMinor || 0),
+      gte: Math.max(freeShippingThresholdMinor, minPriceMinor || 0),
     };
   }
 
@@ -257,7 +360,8 @@ export async function getProducts(options: ProductFilterOptions = {}) {
         media: { orderBy: { displayOrder: "asc" } },
         variants: {
           where: { isActive: true },
-          include: { inventoryLevel: true },
+          omit: { costPriceMinor: true }, // seller cost never leaves the server
+          include: { inventoryLevel: { select: { availableUnits: true, reservedUnits: true, lowStockThreshold: true, safetyStock: true } } },
         },
         reviews: {
           where: { isApproved: true },
@@ -307,9 +411,13 @@ export async function getProducts(options: ProductFilterOptions = {}) {
   };
 }
 
+/**
+ * Product page lookup. Applies the public-visibility rule, so drafts, archived,
+ * unapproved products and products of inactive sellers resolve to null (404).
+ */
 export async function getProductBySlug(slug: string) {
-  return prisma.product.findUnique({
-    where: { slug },
+  return prisma.product.findFirst({
+    where: { slug, ...publicProductWhere },
     include: {
       category: true,
       brand: true,
@@ -325,7 +433,8 @@ export async function getProductBySlug(slug: string) {
       media: { orderBy: { displayOrder: "asc" } },
       variants: {
         where: { isActive: true },
-        include: { inventoryLevel: true },
+        omit: { costPriceMinor: true }, // seller cost never leaves the server
+          include: { inventoryLevel: { select: { availableUnits: true, reservedUnits: true, lowStockThreshold: true, safetyStock: true } } },
       },
       reviews: {
         where: { isApproved: true },
@@ -346,13 +455,7 @@ export async function getAllBrands() {
     include: {
       _count: {
         select: {
-          products: {
-            where: {
-              status: ProductStatus.PUBLISHED,
-              isApprovedByPlatform: true,
-              sellerOrg: { operationalStatus: "ACTIVE" },
-            },
-          },
+          products: { where: publicProductWhere },
         },
       },
     },

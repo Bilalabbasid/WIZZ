@@ -25,14 +25,14 @@ export function isCodEnabled(): boolean {
   return SITE_CONFIG.cod.enabled && process.env.FEATURE_COD !== "false";
 }
 
-export function getEnabledPaymentMethods(): PaymentMethodOption[] {
+export function getEnabledPaymentMethods(codLimitMinor: number = SITE_CONFIG.cod.maxOrderLimitMinor): PaymentMethodOption[] {
   const methods: PaymentMethodOption[] = [];
   if (isCodEnabled()) {
     methods.push({
       id: "CASH_ON_DELIVERY",
       label: "Cash on Delivery",
       description: `Pay in cash when the courier delivers your parcel. Available for orders up to Rs. ${(
-        SITE_CONFIG.cod.maxOrderLimitMinor / 100
+        codLimitMinor / 100
       ).toLocaleString("en-PK")}.`,
     });
   }
@@ -46,13 +46,17 @@ export function getEnabledPaymentMethods(): PaymentMethodOption[] {
   return methods;
 }
 
-export function assertPaymentMethodAllowed(method: string, totalMinor: number): PaymentMethodId {
+export function assertPaymentMethodAllowed(
+  method: string,
+  totalMinor: number,
+  codLimitMinor: number = SITE_CONFIG.cod.maxOrderLimitMinor
+): PaymentMethodId {
   if (method === "CASH_ON_DELIVERY") {
     if (!isCodEnabled()) throw new Error("PAYMENT_METHOD_UNAVAILABLE: Cash on delivery is not currently available.");
-    if (totalMinor > SITE_CONFIG.cod.maxOrderLimitMinor) {
+    if (totalMinor > codLimitMinor) {
       throw new Error(
         `COD_LIMIT_EXCEEDED: Cash on delivery is available for orders up to Rs. ${(
-          SITE_CONFIG.cod.maxOrderLimitMinor / 100
+          codLimitMinor / 100
         ).toLocaleString("en-PK")}. Please reduce your order value.`
       );
     }

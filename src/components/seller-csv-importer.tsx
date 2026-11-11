@@ -22,13 +22,45 @@ interface SellerCsvImporterProps {
   onSuccess: () => void;
 }
 
+interface CsvPreviewError {
+  row: number;
+  sku?: string;
+  message: string;
+}
+
+interface CsvPreviewRow {
+  row: number;
+  sku: string;
+  title: string;
+  pricePkr: number | string;
+  stock: number | string;
+  action: string;
+  isValid: boolean;
+  error?: string;
+}
+
+interface CsvPreviewResult {
+  totalRows: number;
+  validCount: number;
+  errorCount: number;
+  errors: CsvPreviewError[];
+  previewRows?: CsvPreviewRow[];
+}
+
+interface CsvCommitResult {
+  validCount: number;
+  createdProducts: number;
+  createdVariants: number;
+  updatedVariants: number;
+}
+
 export function SellerCsvImporter({ isOpen, onClose, onSuccess }: SellerCsvImporterProps) {
   const [csvText, setCsvText] = useState<string>("");
   const [fileName, setFileName] = useState<string>("");
   const [isPreviewing, setIsPreviewing] = useState<boolean>(false);
   const [isCommitting, setIsCommitting] = useState<boolean>(false);
-  const [previewResult, setPreviewResult] = useState<any | null>(null);
-  const [commitResult, setCommitResult] = useState<any | null>(null);
+  const [previewResult, setPreviewResult] = useState<CsvPreviewResult | null>(null);
+  const [commitResult, setCommitResult] = useState<CsvCommitResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   if (!isOpen) return null;
@@ -192,8 +224,8 @@ export function SellerCsvImporter({ isOpen, onClose, onSuccess }: SellerCsvImpor
         {/* Body */}
         <div className="p-6 overflow-y-auto space-y-6 text-xs">
           {/* Documented Upsert Rules */}
-          <div className="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-200 text-indigo-950 space-y-2">
-            <div className="flex items-center gap-2 font-bold text-xs text-indigo-900">
+          <div className="p-4 rounded-2xl bg-brand-50/70 border border-brand-200 text-brand-950 space-y-2">
+            <div className="flex items-center gap-2 font-bold text-xs text-brand-900">
               <HelpCircle size={15} />
               <span>Documented Catalog Upsert Rules</span>
             </div>
@@ -274,7 +306,7 @@ export function SellerCsvImporter({ isOpen, onClose, onSuccess }: SellerCsvImpor
           {/* Preview Table */}
           {isPreviewing && (
             <div className="py-8 text-center space-y-2">
-              <RefreshCw className="animate-spin text-indigo-600 mx-auto" size={24} />
+              <RefreshCw className="animate-spin text-brand-600 mx-auto" size={24} />
               <p className="text-slate-500 font-semibold">Validating rows against catalog rules...</p>
             </div>
           )}
@@ -299,7 +331,7 @@ export function SellerCsvImporter({ isOpen, onClose, onSuccess }: SellerCsvImpor
                     Errors detected ({previewResult.errors.length}):
                   </p>
                   <div className="max-h-32 overflow-y-auto space-y-1">
-                    {previewResult.errors.map((err: any, idx: number) => (
+                    {previewResult.errors.map((err, idx) => (
                       <p key={idx} className="text-[11px] text-rose-800">
                         &bull; <strong>Row {err.row}</strong> {err.sku ? `(SKU: ${err.sku})` : ""}: {err.message}
                       </p>
@@ -323,7 +355,7 @@ export function SellerCsvImporter({ isOpen, onClose, onSuccess }: SellerCsvImpor
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {previewResult.previewRows?.map((r: any, idx: number) => (
+                    {previewResult.previewRows?.map((r, idx) => (
                       <tr
                         key={idx}
                         className={r.isValid ? "hover:bg-slate-50/50" : "bg-rose-50/30"}
@@ -377,7 +409,7 @@ export function SellerCsvImporter({ isOpen, onClose, onSuccess }: SellerCsvImpor
               onClick={handleCommitImport}
               isLoading={isCommitting}
               disabled={isCommitting || previewResult.validCount === 0}
-              className="font-bold shadow-md shadow-emerald-600/20"
+              className="font-bold shadow-md shadow-brand-600/20"
             >
               <span>Commit Import ({previewResult.validCount} Valid Rows)</span>
             </Button>

@@ -37,6 +37,8 @@ cp .env.example .env
 | `APP_URL` | **Yes** | `https://wizz.pk` | Canonical domain used for SEO, redirects, and canonical links |
 | `NEXT_PUBLIC_APP_URL` | **Yes** | `https://wizz.pk` | Client-accessible base URL |
 | `DATABASE_URL` | **Yes** | `postgresql://user:pass@host:5432/wizz_prod?schema=public&connection_limit=10` | PostgreSQL connection string |
+
+> **Supabase / hosted poolers:** the Supabase session pooler (port 5432) allows only 15 clients in total. Keep `connection_limit=5` (or lower) in `DATABASE_URL`. The app caps its pool at 5 when the URL has no limit (`DB_CONNECTION_LIMIT` overrides it), and the deploy steps (`db push`, bootstrap) use one connection each and retry for up to ~1.5 minutes if the pooler is momentarily full ("max clients reached").
 | `JWT_SECRET` | **Yes** | `openssl rand -base64 32` | 32+ char secret for user session tokens & signed URLs |
 | `CRON_SECRET` | **Yes** | `openssl rand -base64 32` | Bearer token authenticating `/api/cron/cleanup` |
 | `PAYMENT_WEBHOOK_SECRET` | **Yes** | `openssl rand -base64 32` | HMAC-SHA256 signature key for payment webhooks |

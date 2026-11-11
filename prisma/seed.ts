@@ -585,9 +585,9 @@ async function main() {
   const settingsData = [
     { key: "SITE_NAME", valueJson: JSON.stringify("WIZZ.PK"), category: "GENERAL", isPublic: true },
     { key: "SUPPORT_EMAIL", valueJson: JSON.stringify("support@wizz.pk"), category: "GENERAL", isPublic: true },
-    { key: "SUPPORT_PHONE", valueJson: JSON.stringify("+1 (800) 555-WIZZ"), category: "GENERAL", isPublic: true },
+    { key: "SUPPORT_PHONE", valueJson: JSON.stringify(""), category: "GENERAL", isPublic: true },
     { key: "RETURN_WINDOW_DAYS", valueJson: JSON.stringify(30), category: "POLICIES", isPublic: true },
-    { key: "FREE_SHIPPING_THRESHOLD_CENTS", valueJson: JSON.stringify(5000), category: "SHIPPING", isPublic: true },
+    { key: "FREE_SHIPPING_THRESHOLD_CENTS", valueJson: JSON.stringify(300000), category: "SHIPPING", isPublic: true },
   ];
 
   for (const s of settingsData) {

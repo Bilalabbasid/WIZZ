@@ -1,32 +1,62 @@
+import type { Metadata } from "next";
+import Link from "next/link";
 import { SITE_CONFIG } from "@/lib/config";
+import { getCommerceSettings } from "@/lib/commerce-settings";
+import { formatCurrency } from "@/lib/formatters";
+import { PolicySection, PolicyShell } from "../_components/policy-shell";
 
-export default function TermsPage() {
+export const metadata: Metadata = {
+  title: "Terms of service",
+  description: "The terms for shopping and selling on WIZZ.PK.",
+  alternates: { canonical: `${SITE_CONFIG.canonicalUrl}/policies/terms` },
+};
+
+export default async function TermsPage() {
+  const { codMaxOrderMinor, returnWindowDays } = await getCommerceSettings();
+
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-8">
-      <div>
-        <span className="text-xs font-bold text-indigo-600 tracking-wider uppercase">Legal & Governance</span>
-        <h1 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight mt-1">
-          Terms of Service
-        </h1>
-        <p className="text-xs text-slate-500 mt-1">WIZZ.PK E-Commerce Platform Agreement</p>
-      </div>
-
-      <div className="bg-white rounded-3xl border border-slate-200/90 p-8 space-y-6 text-slate-700 text-sm leading-relaxed">
-        <h2 className="text-base font-bold text-slate-900">1. Acceptance of Terms</h2>
+    <PolicyShell
+      current="/policies/terms"
+      eyebrow="Terms of service"
+      title="The terms for using WIZZ.PK."
+      intro={<p>By using WIZZ.PK, shopping or applying to sell, you agree to these terms. They are pending legal review.</p>}
+    >
+      <PolicySection number={1} title="The marketplace">
         <p>
-          By browsing, purchasing, or registering an account on WIZZ.PK, you agree to comply with and be bound by these Terms of Service. These terms govern both retail transactions for physical products and merchant participation in our marketplace onboarding program.
+          WIZZ.PK sells new products from approved sellers, including its own store, WIZZ.PK Direct. Each product page
+          shows who sells it.
         </p>
+      </PolicySection>
 
-        <h2 className="text-base font-bold text-slate-900">2. Accuracy of Product Information & Inventory</h2>
+      <PolicySection number={2} title="Prices, stock and checkout">
         <p>
-          WIZZ.PK represents real warehouse physical inventory. Listings state authentic specifications, dimensions, weight, and pricing. Temporary stock reservations are held for 15 minutes during checkout to ensure fair allocation without overselling.
+          Prices are in Pakistani rupees. Totals, discounts and delivery fees are calculated when you check out. Stock is
+          held for {SITE_CONFIG.reservationExpiryMinutes} minutes while you complete checkout, then released.
         </p>
+        <p>Cash on delivery is available for orders up to {formatCurrency(codMaxOrderMinor)}.</p>
+      </PolicySection>
 
-        <h2 className="text-base font-bold text-slate-900">3. Merchant Standards & Verification</h2>
+      <PolicySection number={3} title="Cancellations and returns">
         <p>
-          Sellers applying to join WIZZ.PK must complete formal KYC inspection. Approved sellers operate under strict fulfillment SLA requirements. WIZZ.PK reserves the right to suspend or remove any seller organization failing to fulfill orders accurately.
+          You can cancel until a package has shipped. Delivered items can be returned within {returnWindowDays} days, as
+          described in the{" "}
+          <Link href="/policies/returns" className="underline underline-offset-4">
+            returns policy
+          </Link>
+          .
         </p>
-      </div>
-    </div>
+      </PolicySection>
+
+      <PolicySection number={4} title="Your account">
+        <p>Keep your sign-in details private. You are responsible for orders placed from your account.</p>
+      </PolicySection>
+
+      <PolicySection number={5} title="Sellers">
+        <p>
+          Sellers must apply and be approved before listing, and each product is reviewed before it goes live. WIZZ.PK
+          can suspend a seller that doesn&apos;t fulfil orders accurately or breaks these terms.
+        </p>
+      </PolicySection>
+    </PolicyShell>
   );
 }

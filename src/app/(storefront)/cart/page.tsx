@@ -1,13 +1,13 @@
 import { getCurrentUser } from "@/lib/auth";
+import { CatalogBreadcrumb } from "@/components/catalog-ui";
 import { getActiveCart } from "@/modules/cart/services";
 import { getCartToken } from "@/lib/cart-session";
 import { CartView } from "@/components/cart-view";
-import Link from "next/link";
-import { ChevronRight } from "lucide-react";
+import { getCommerceSettings } from "@/lib/commerce-settings";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Shopping Cart | WIZZ.PK",
+  title: "Cart",
   robots: { index: false, follow: false },
 };
 
@@ -16,6 +16,7 @@ export default async function CartPage() {
   // Guests are identified by the cart cookie (the same one /api/cart/items sets)
   const sessionToken = user ? undefined : await getCartToken();
   const cart = await getActiveCart(sessionToken, user?.id);
+  const settings = await getCommerceSettings();
 
   const initialItems = (cart?.items ?? []).map((i) => ({
     id: i.id,
@@ -26,10 +27,16 @@ export default async function CartPage() {
       sku: i.variant.sku,
       title: i.variant.title,
       priceMinor: i.variant.priceMinor,
+      isPurchasable:
+        i.variant.isActive &&
+        i.variant.product.status === "PUBLISHED" &&
+        i.variant.product.isApprovedByPlatform &&
+        i.variant.product.sellerOrg.operationalStatus === "ACTIVE",
       product: {
         title: i.variant.product.title,
         slug: i.variant.product.slug,
         sellerOrg: {
+          id: i.variant.product.sellerOrg.id,
           name: i.variant.product.sellerOrg.name,
           slug: i.variant.product.sellerOrg.slug,
         },
@@ -45,26 +52,24 @@ export default async function CartPage() {
   }));
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
-      {/* Breadcrumb */}
-      <nav className="flex items-center gap-2 text-xs text-slate-500">
-        <Link href="/" className="hover:text-slate-900">Home</Link>
-        <ChevronRight size={14} />
-        <Link href="/products" className="hover:text-slate-900">Store</Link>
-        <ChevronRight size={14} />
-        <span className="font-semibold text-slate-900">Shopping Cart</span>
-      </nav>
+    <div className="mx-auto w-full max-w-[1360px] px-5 sm:px-10 py-8 sm:py-10 space-y-8">
+      <CatalogBreadcrumb items={[{ label: "Home", href: "/" }, { label: "Cart" }]} />
 
-      <div>
-        <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
-          Shopping Cart
+      <div className="space-y-3">
+        <h1 className="text-[clamp(32px,4.5vw,56px)] font-semibold leading-none tracking-[-0.045em] text-ink">
+          Cart
         </h1>
-        <p className="text-xs text-slate-500 mt-1">
-          Review your items, apply promotional codes, and verify shipping thresholds.
+        <p className="text-sm text-mute">
+          Review your items and apply a voucher. Totals are calculated by our server using current prices and stock.
         </p>
       </div>
 
-      <CartView initialItems={initialItems} />
+      <CartView
+        cartId={cart?.id ?? null}
+        initialItems={initialItems}
+        freeShippingThresholdMinor={settings.freeShippingThresholdMinor}
+        standardShippingMinor={settings.standardShippingMinor}
+      />
     </div>
   );
 }

@@ -6,13 +6,30 @@ import { Truck, ExternalLink, RefreshCw, CheckCircle2, Clock, AlertTriangle, Arr
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
-export default function SellerShipmentsPage() {
-  const [shipments, setShipments] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+interface SellerShipment {
+  id: string;
+  status: string;
+  carrierName?: string | null;
+  trackingNumber?: string | null;
+  shippedAt?: string | null;
+}
 
-  useEffect(() => {
-    loadShipments();
-  }, []);
+interface ShipmentRow extends SellerShipment {
+  sellerOrderNumber: string;
+  orderId: string;
+  customerEmail?: string;
+}
+
+interface OrderWithShipments {
+  id: string;
+  sellerOrderNumber: string;
+  customerOrder?: { customerEmail?: string } | null;
+  shipments?: SellerShipment[];
+}
+
+export default function SellerShipmentsPage() {
+  const [shipments, setShipments] = useState<ShipmentRow[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   const loadShipments = async () => {
     setIsLoading(true);
@@ -20,10 +37,10 @@ export default function SellerShipmentsPage() {
       const res = await fetch("/api/seller/orders");
       const data = await res.json();
       if (res.ok && data.orders) {
-        const flatShipments: any[] = [];
-        data.orders.forEach((o: any) => {
+        const flatShipments: ShipmentRow[] = [];
+        data.orders.forEach((o: OrderWithShipments) => {
           if (o.shipments) {
-            o.shipments.forEach((s: any) => {
+            o.shipments.forEach((s) => {
               flatShipments.push({
                 ...s,
                 sellerOrderNumber: o.sellerOrderNumber,
@@ -41,6 +58,10 @@ export default function SellerShipmentsPage() {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    void Promise.resolve().then(loadShipments);
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -110,7 +131,7 @@ export default function SellerShipmentsPage() {
 
                   <Link
                     href={`/seller/portal/orders/${s.orderId}`}
-                    className="w-full flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl text-xs font-bold bg-slate-900 text-white hover:bg-emerald-600 transition min-h-[44px]"
+                    className="w-full flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl text-xs font-bold bg-slate-900 text-white hover:bg-brand-600 transition min-h-[44px]"
                   >
                     <span>View Suborder Details</span>
                     <ArrowRight size={14} />
@@ -164,7 +185,7 @@ export default function SellerShipmentsPage() {
                       <td className="py-4 px-6 text-right">
                         <Link
                           href={`/seller/portal/orders/${s.orderId}`}
-                          className="font-bold text-emerald-700 hover:text-emerald-800 p-1 rounded inline-flex items-center min-h-[44px]"
+                          className="font-bold text-brand-700 hover:text-brand-800 p-1 rounded inline-flex items-center min-h-[44px]"
                         >
                           View Order &rarr;
                         </Link>

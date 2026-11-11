@@ -7,15 +7,25 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { formatPkr } from "@/lib/formatters";
 
+interface SellerOrderItem {
+  quantity: number;
+}
+
+interface SellerOrderRow {
+  id: string;
+  sellerOrderNumber: string;
+  status: string;
+  totalMinor: number | bigint;
+  netSellerPayableMinor: number | bigint;
+  items?: SellerOrderItem[];
+  customerOrder?: { orderNumber?: string; customerEmail?: string } | null;
+}
+
 export default function SellerOrdersPage() {
-  const [orders, setOrders] = useState<any[]>([]);
+  const [orders, setOrders] = useState<SellerOrderRow[]>([]);
   const [total, setTotal] = useState(0);
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    loadOrders();
-  }, [statusFilter]);
 
   const loadOrders = async () => {
     setIsLoading(true);
@@ -35,6 +45,10 @@ export default function SellerOrdersPage() {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    void Promise.resolve().then(loadOrders);
+  }, [statusFilter]);
 
   return (
     <div className="space-y-6">
@@ -62,7 +76,7 @@ export default function SellerOrdersPage() {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="text-xs rounded-xl border border-slate-200 p-2 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="text-xs rounded-xl border border-slate-200 p-2 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500"
           >
             <option value="">All Packages ({total})</option>
             <option value="CONFIRMED">Confirmed / Processing</option>
@@ -88,7 +102,7 @@ export default function SellerOrdersPage() {
             {/* Mobile Cards (Viewports < md) */}
             <div className="block md:hidden divide-y divide-slate-100">
               {orders.map((o) => {
-                const itemCount = o.items?.reduce((acc: number, i: any) => acc + i.quantity, 0) || 0;
+                const itemCount = o.items?.reduce((acc: number, i: SellerOrderItem) => acc + i.quantity, 0) || 0;
                 return (
                   <div key={o.id} className="p-4 space-y-3">
                     <div className="flex items-center justify-between">
@@ -121,7 +135,7 @@ export default function SellerOrdersPage() {
                       </div>
                       <Link
                         href={`/seller/portal/orders/${o.id}`}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-800 hover:bg-emerald-100 transition min-h-[44px]"
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-800 hover:bg-brand-100 transition min-h-[44px]"
                       >
                         <span>Fulfill</span>
                         <ArrowRight size={14} />
@@ -149,7 +163,7 @@ export default function SellerOrdersPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-slate-700">
                   {orders.map((o) => {
-                    const itemCount = o.items?.reduce((acc: number, i: any) => acc + i.quantity, 0) || 0;
+                    const itemCount = o.items?.reduce((acc: number, i: SellerOrderItem) => acc + i.quantity, 0) || 0;
                     return (
                       <tr key={o.id} className="hover:bg-slate-50/50 transition">
                         <td className="py-4 px-6 font-bold text-slate-900 font-mono">
@@ -189,7 +203,7 @@ export default function SellerOrdersPage() {
                         <td className="py-4 px-6 text-right">
                           <Link
                             href={`/seller/portal/orders/${o.id}`}
-                            className="inline-flex items-center gap-1 font-bold text-indigo-600 hover:text-indigo-800"
+                            className="inline-flex items-center gap-1 font-bold text-brand-600 hover:text-brand-800"
                           >
                             <span>Fulfill Package</span>
                             <ArrowRight size={13} />

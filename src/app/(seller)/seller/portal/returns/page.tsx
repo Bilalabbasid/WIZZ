@@ -13,34 +13,48 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
+const STATUS_NOTE: Record<string, string> = {
+  REJECTED: "Rejected",
+  RECEIVED: "Awaiting refund by finance",
+  REFUNDED: "Refunded",
+};
+
+interface SellerReturn {
+  id: string;
+  status: string;
+  reasonCode: string;
+  explanation?: string | null;
+  items?: unknown[];
+  sellerOrder?: { sellerOrderNumber?: string } | null;
+}
+
 export default function SellerReturnsPage() {
-  const [returns, setReturns] = useState<any[]>([]);
+  const [returns, setReturns] = useState<SellerReturn[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedReturn, setSelectedReturn] = useState<any | null>(null);
-  const [decision, setDecision] = useState<"APPROVED" | "REJECTED">("APPROVED");
-  const [inspectionResult, setInspectionResult] = useState("Goods inspected and intact in original condition");
+  const [selectedReturn, setSelectedReturn] = useState<SellerReturn | null>(null);
+  const [decision, setDecision] = useState<"APPROVED" | "REJECTED" | "RECEIVED">("APPROVED");
+  const [inspectionResult, setInspectionResult] = useState("");
   const [isResolving, setIsResolving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    loadReturns();
-  }, []);
 
   const loadReturns = async () => {
     setIsLoading(true);
     try {
       const res = await fetch("/api/seller/returns");
       const data = await res.json();
-      if (res.ok) {
-        setReturns(data.returns || []);
-      }
-    } catch {
-      // silent
+      if (!res.ok) throw new Error(data.error || "Could not load returns.");
+      setReturns(data.returns || []);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Could not load returns.");
     } finally {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    void Promise.resolve().then(loadReturns);
+  }, []);
 
   const handleResolveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,7 +76,13 @@ export default function SellerReturnsPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to resolve return");
 
-      setFeedback(`Return #${selectedReturn.id.slice(-6)} marked ${decision} successfully.`);
+      setFeedback(
+        decision === "RECEIVED"
+          ? `Return #${selectedReturn.id.slice(-6)} received. The items are back in stock; platform finance will record the refund.`
+          : decision === "APPROVED"
+          ? `Return #${selectedReturn.id.slice(-6)} approved. The customer has been told to send the item back.`
+          : `Return #${selectedReturn.id.slice(-6)} rejected. The customer can see your reason.`
+      );
       setSelectedReturn(null);
       loadReturns();
     } catch (err: unknown) {
@@ -127,7 +147,7 @@ export default function SellerReturnsPage() {
                     </div>
                     <Badge
                       variant={
-                        r.status === "REFUNDED" || r.status === "APPROVED"
+                        r.status === "REFUNDED" || r.status === "RECEIVED"
                           ? "success"
                           : r.status === "REJECTED"
                           ? "danger"
@@ -150,26 +170,27 @@ export default function SellerReturnsPage() {
                     </div>
                     {r.explanation && (
                       <p className="text-[11px] text-slate-600 pt-1 border-t border-slate-200/60 line-clamp-2 italic">
-                        "{r.explanation}"
+                        &quot;{r.explanation}&quot;
                       </p>
                     )}
                   </div>
 
                   <div className="flex justify-end pt-1">
-                    {r.status === "SUBMITTED" ? (
+                    {r.status === "SUBMITTED" || r.status === "APPROVED" ? (
                       <Button
                         size="sm"
                         variant="secondary"
                         onClick={() => {
                           setSelectedReturn(r);
-                          setDecision("APPROVED");
+                          setDecision(r.status === "APPROVED" ? "RECEIVED" : "APPROVED");
+                          setInspectionResult("");
                         }}
                         className="w-full sm:w-auto"
                       >
-                        Inspect & Resolve
+                        {r.status === "APPROVED" ? "Mark item received" : "Review request"}
                       </Button>
                     ) : (
-                      <span className="text-xs text-slate-400 font-medium py-1">Resolved</span>
+                      <span className="text-xs text-slate-400 font-medium py-1">{STATUS_NOTE[r.status] || "Closed"}</span>
                     )}
                   </div>
                 </div>
@@ -211,7 +232,7 @@ export default function SellerReturnsPage() {
                       <td className="py-4 px-4">
                         <Badge
                           variant={
-                            r.status === "REFUNDED" || r.status === "APPROVED"
+                            r.status === "REFUNDED" || r.status === "RECEIVED"
                               ? "success"
                               : r.status === "REJECTED"
                               ? "danger"
@@ -223,19 +244,20 @@ export default function SellerReturnsPage() {
                         </Badge>
                       </td>
                       <td className="py-4 px-6 text-right">
-                        {r.status === "SUBMITTED" ? (
+                        {r.status === "SUBMITTED" || r.status === "APPROVED" ? (
                           <Button
                             size="sm"
                             variant="secondary"
                             onClick={() => {
                               setSelectedReturn(r);
-                              setDecision("APPROVED");
+                              setDecision(r.status === "APPROVED" ? "RECEIVED" : "APPROVED");
+                              setInspectionResult("");
                             }}
                           >
-                            Inspect & Resolve
+                            {r.status === "APPROVED" ? "Mark item received" : "Review request"}
                           </Button>
                         ) : (
-                          <span className="text-slate-400 font-medium">Resolved</span>
+                          <span className="text-slate-400 font-medium">{STATUS_NOTE[r.status] || "Closed"}</span>
                         )}
                       </td>
                     </tr>
@@ -262,17 +284,24 @@ export default function SellerReturnsPage() {
 
             <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 text-xs space-y-1">
               <span className="text-slate-500 font-bold">Reason:</span> {selectedReturn.reasonCode}
-              <p className="text-slate-700 italic">"{selectedReturn.explanation}"</p>
+              <p className="text-slate-700 italic">&quot;{selectedReturn.explanation}&quot;</p>
             </div>
 
             <form onSubmit={handleResolveSubmit} className="space-y-4 text-xs">
+              {selectedReturn.status === "APPROVED" ? (
+                <p className="p-3 rounded-xl bg-brand-50 border border-brand-200 text-brand-900">
+                  Confirm the item has come back. It will be added back to your stock, and platform finance will
+                  refund the customer and deduct the amount from your next payout.
+                </p>
+              ) : (
               <div>
-                <label className="block font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
-                  Inspection Decision
-                </label>
+                <span className="block font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                  Decision
+                </span>
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
+                    aria-pressed={decision === "APPROVED"}
                     onClick={() => setDecision("APPROVED")}
                     className={`p-3 rounded-xl border text-center font-bold flex items-center justify-center gap-1.5 ${
                       decision === "APPROVED"
@@ -281,11 +310,12 @@ export default function SellerReturnsPage() {
                     }`}
                   >
                     <CheckCircle2 size={15} />
-                    <span>Approve & Restock</span>
+                    <span>Approve return</span>
                   </button>
 
                   <button
                     type="button"
+                    aria-pressed={decision === "REJECTED"}
                     onClick={() => setDecision("REJECTED")}
                     className={`p-3 rounded-xl border text-center font-bold flex items-center justify-center gap-1.5 ${
                       decision === "REJECTED"
@@ -294,21 +324,24 @@ export default function SellerReturnsPage() {
                     }`}
                   >
                     <XCircle size={15} />
-                    <span>Reject Return</span>
+                    <span>Reject return</span>
                   </button>
                 </div>
               </div>
+              )}
 
               <div>
-                <label className="block font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
-                  Inspection Report & Findings
+                <label htmlFor="inspection-note" className="block font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                  {decision === "REJECTED" ? "Reason (shown to the customer)" : "Notes (optional)"}
                 </label>
                 <textarea
+                  id="inspection-note"
                   rows={3}
-                  required
+                  required={decision === "REJECTED"}
+                  maxLength={1000}
                   value={inspectionResult}
                   onChange={(e) => setInspectionResult(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 p-2.5 outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full rounded-xl border border-slate-300 p-2.5 outline-none focus:ring-2 focus:ring-brand-500"
                 />
               </div>
 
@@ -321,7 +354,7 @@ export default function SellerReturnsPage() {
                   Cancel
                 </Button>
                 <Button type="submit" isLoading={isResolving} disabled={isResolving}>
-                  Confirm Decision
+                  {decision === "RECEIVED" ? "Confirm received" : "Confirm decision"}
                 </Button>
               </div>
             </form>

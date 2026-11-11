@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { clientErrorMessage } from "@/lib/api-error";
 import { prisma } from "@/lib/db";
 
 export async function GET() {
@@ -15,7 +16,7 @@ export async function GET() {
       version: "1.0.0",
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Database connection failed";
+    const message = clientErrorMessage(err, "Database connection failed");
     return NextResponse.json(
       {
         status: "unhealthy",

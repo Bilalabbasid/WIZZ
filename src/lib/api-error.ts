@@ -37,3 +37,30 @@ export function apiError(err: unknown, fallback = "Something went wrong. Please 
   console.error("[api] unexpected error:", message || err);
   return NextResponse.json({ error: fallback }, { status: 500 });
 }
+
+const INTERNAL_ERROR_PATTERN =
+  /prisma|invocation|\bP\d{4}\b|ECONN|ETIMEDOUT|ENOTFOUND|connect|relation "|column "|violates|constraint|syntax error|undefined|null value|Cannot read|is not a function|stack|\.ts:\d|\.js:\d/i;
+
+/**
+ * Message to show the user for a caught error. Intentional business-rule messages
+ * (thrown by our services) pass through with any `CODE:` prefix removed; database,
+ * driver and programming errors are logged and replaced with `fallback`.
+ */
+export function clientErrorMessage(err: unknown, fallback = "Something went wrong. Please try again.") {
+  const raw = err instanceof Error ? err.message : typeof err === "string" ? err : "";
+  const name = err instanceof Error ? err.name : "";
+  if (!raw || name.startsWith("PrismaClient") || raw.length > 400 || raw.includes("\n") || INTERNAL_ERROR_PATTERN.test(raw)) {
+    console.error("[api] unexpected error:", err);
+    return fallback;
+  }
+  return raw.replace(/^[A-Z][A-Z_]+:\s*/, "");
+}
+
+/** HTTP status for a caught service error, based on its `CODE:` prefix. */
+export function clientErrorStatus(err: unknown, fallbackStatus = 400) {
+  const raw = err instanceof Error ? err.message : "";
+  if (raw.startsWith("UNAUTHORIZED")) return 401;
+  if (raw.includes("FORBIDDEN")) return 403;
+  if (raw.startsWith("INSUFFICIENT_STOCK") || raw.startsWith("ITEM_UNAVAILABLE") || raw.startsWith("IDEMPOTENCY_KEY_CONFLICT")) return 409;
+  return fallbackStatus;
+}

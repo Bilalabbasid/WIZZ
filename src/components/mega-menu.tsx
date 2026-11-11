@@ -1,21 +1,8 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
-import {
-  Menu,
-  X,
-  ChevronRight,
-  Layers,
-  Sparkles,
-  Zap,
-  ShieldCheck,
-  Store,
-  Package,
-  HelpCircle,
-  Phone,
-} from "lucide-react";
-import { WizzMark } from "./wizz-logo";
+import { ArrowRight, ChevronDown } from "lucide-react";
 
 export interface MegaMenuCategory {
   id: string;
@@ -28,185 +15,110 @@ export interface MegaMenuProps {
   categories: MegaMenuCategory[];
 }
 
+/**
+ * Header "Categories" control: a nav-styled button that opens a panel of real catalog
+ * categories (from the database) below the header. Closes on Escape, outside click or
+ * choosing a link.
+ */
 export function MegaMenu({ categories }: MegaMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const drawerRef = useRef<HTMLDivElement>(null);
+  const panelId = useId();
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
-  const handleClose = () => {
-    setIsOpen(false);
-    setTimeout(() => triggerRef.current?.focus(), 50);
-  };
-
-  // Close on Escape key
   useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setIsOpen(false);
         triggerRef.current?.focus();
       }
-    }
-    if (isOpen) {
-      document.addEventListener("keydown", handleKeyDown);
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "";
-    }
+    };
+    const onPointer = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) setIsOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onPointer);
     return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-      document.body.style.overflow = "";
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onPointer);
     };
   }, [isOpen]);
 
+  // Only categories with public products, unless none have any yet (fresh catalogue)
+  const withProducts = categories.filter((c) => (c._count?.products ?? 0) > 0);
+  const shown = withProducts.length > 0 ? withProducts : categories;
+  const close = () => setIsOpen(false);
+
   return (
-    <>
+    <div ref={wrapperRef} className="relative">
       <button
         ref={triggerRef}
         type="button"
-        onClick={() => setIsOpen(true)}
-        className="flex items-center gap-2 h-9 px-3 rounded-md text-slate-900 hover:text-emerald-700 hover:bg-slate-100 font-bold text-[13px] transition-colors flex-shrink-0"
-        aria-label="Open All Departments Menu"
+        onClick={() => setIsOpen((v) => !v)}
         aria-expanded={isOpen}
+        aria-controls={panelId}
+        className={`inline-flex items-center gap-1 min-h-[44px] px-1 text-sm font-medium transition-colors ${
+          isOpen ? "text-ink" : "text-mute hover:text-ink"
+        }`}
       >
-        <Menu size={16} className="text-emerald-600" />
-        <span className="whitespace-nowrap">All Categories</span>
+        Categories
+        <ChevronDown
+          size={15}
+          aria-hidden="true"
+          className={`transition-transform motion-reduce:transition-none ${isOpen ? "rotate-180" : ""}`}
+        />
       </button>
 
-      {/* Slide-over Drawer & Overlay */}
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex">
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity"
-            onClick={handleClose}
-            aria-hidden="true"
-          />
-
-          {/* Drawer content */}
-          <div
-            ref={drawerRef}
-            className="relative w-full max-w-sm bg-white shadow-2xl z-10 flex flex-col h-full animate-in slide-in-from-left duration-200"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Browse All Departments"
-          >
-            {/* Header */}
-            <div className="p-4 bg-slate-950 text-white flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <WizzMark size={28} />
-                <span className="font-extrabold text-sm tracking-tight">
-                  Shop by Department
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={handleClose}
-                className="w-11 h-11 flex items-center justify-center rounded-xl text-slate-400 hover:text-white hover:bg-slate-900 transition-colors focus-visible:ring-2 focus-visible:ring-emerald-500"
-                aria-label="Close menu"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* Scrollable list */}
-            <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
-              {/* Highlight / Special Features */}
-              <div className="p-3 bg-slate-50 space-y-1">
-                <Link
-                  href="/products?sort=featured"
-                  onClick={() => setIsOpen(false)}
-                  className="flex items-center justify-between p-2 rounded-xl text-xs font-bold text-emerald-800 hover:bg-emerald-100/70 transition-colors"
-                >
-                  <span className="flex items-center gap-2">
-                    <Sparkles size={15} className="text-emerald-600" />
-                    Featured Hardware & Tech
-                  </span>
-                  <ChevronRight size={13} />
-                </Link>
-
-                <Link
-                  href="/products?sort=price_asc"
-                  onClick={() => setIsOpen(false)}
-                  className="flex items-center justify-between p-2 rounded-xl text-xs font-bold text-amber-900 hover:bg-amber-50 transition-colors"
-                >
-                  <span className="flex items-center gap-2">
-                    <Zap size={15} className="text-amber-600" />
-                    Special Deals & Discounts
-                  </span>
-                  <ChevronRight size={13} />
-                </Link>
-
-                <Link
-                  href="/products"
-                  onClick={() => setIsOpen(false)}
-                  className="flex items-center justify-between p-2 rounded-xl text-xs font-bold text-indigo-900 hover:bg-indigo-50 transition-colors"
-                >
-                  <span className="flex items-center gap-2">
-                    <ShieldCheck size={15} className="text-indigo-600" />
-                    WIZZ.PK Direct Flagship
-                  </span>
-                  <ChevronRight size={13} />
-                </Link>
-              </div>
-
-              {/* Categories Section */}
-              <div className="p-3">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2 block mb-2">
-                  All Departments ({categories.length})
-                </span>
-                <div className="space-y-0.5">
-                  {categories.map((c) => (
-                    <Link
-                      key={c.id}
-                      href={`/categories/${c.slug}`}
-                      onClick={() => setIsOpen(false)}
-                      className="flex items-center justify-between px-2.5 py-2 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-100 hover:text-emerald-700 transition-colors group"
-                    >
-                      <span className="flex items-center gap-2 truncate">
-                        <Layers size={14} className="text-slate-400 group-hover:text-emerald-600 flex-shrink-0" />
-                        <span className="truncate">{c.name}</span>
+        <div
+          id={panelId}
+          className="absolute left-0 top-full mt-2 w-[min(640px,calc(100vw-80px))] rounded-[24px] border border-line-soft bg-white p-3 shadow-[0_24px_48px_-24px_rgba(14,14,13,0.35)] z-50"
+        >
+          <p className="px-3 pt-2 pb-2 font-mono text-[11px] uppercase tracking-[0.08em] text-mute">
+            Shop by category
+          </p>
+          {shown.length === 0 ? (
+            <p className="px-3 pb-3 text-sm text-mute">Categories will appear here once products are listed.</p>
+          ) : (
+            <ul className="grid grid-cols-2 gap-x-2">
+              {shown.map((c) => (
+                <li key={c.id} className="min-w-0">
+                  <Link
+                    href={`/categories/${c.slug}`}
+                    onClick={close}
+                    className="flex items-center justify-between gap-3 px-3 min-h-[44px] rounded-xl text-sm text-ink hover:bg-canvas transition-colors"
+                  >
+                    <span className="truncate">{c.name}</span>
+                    {(c._count?.products ?? 0) > 0 && (
+                      <span className="font-mono text-xs text-mute-2 tabular-nums flex-shrink-0">
+                        {c._count!.products}
                       </span>
-                      {c._count && c._count.products > 0 && (
-                        <span className="text-[10px] font-medium text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-full">
-                          {c._count.products}
-                        </span>
-                      )}
-                    </Link>
-                  ))}
-                </div>
-              </div>
-
-              {/* Merchant & Customer Services */}
-              <div className="p-3 bg-slate-50/50 space-y-1">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2 block mb-1">
-                  Customer & Merchant
-                </span>
-                <Link
-                  href="/sell"
-                  onClick={() => setIsOpen(false)}
-                  className="flex items-center gap-2 p-2 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-100"
-                >
-                  <Store size={14} className="text-emerald-600" />
-                  <span>Sell on WIZZ.PK Marketplace</span>
-                </Link>
-                <Link
-                  href="/contact"
-                  onClick={() => setIsOpen(false)}
-                  className="flex items-center gap-2 p-2 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-100"
-                >
-                  <HelpCircle size={14} className="text-slate-500" />
-                  <span>Help & Customer Care Desk</span>
-                </Link>
-              </div>
-            </div>
-
-            {/* Bottom bar */}
-            <div className="p-3 bg-slate-100 text-[11px] text-slate-500 border-t border-slate-200 text-center">
-              WIZZ.PK • Nationwide Verified Marketplace
-            </div>
+                    )}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="mt-2 border-t border-line-soft pt-2 flex flex-wrap gap-2 px-1">
+            <Link
+              href="/products"
+              onClick={close}
+              className="inline-flex items-center gap-2 min-h-[44px] px-4 rounded-full border border-ink text-sm font-medium text-ink hover:bg-canvas"
+            >
+              All products
+              <ArrowRight size={15} aria-hidden="true" />
+            </Link>
+            <Link
+              href="/products?deals=true"
+              onClick={close}
+              className="inline-flex items-center min-h-[44px] px-4 rounded-full text-sm font-medium text-mute hover:text-ink"
+            >
+              Deals
+            </Link>
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }
