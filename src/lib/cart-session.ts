@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { cookies } from "next/headers";
 import { SITE_CONFIG } from "./config";
+import { mergeGuestCart } from "@/modules/cart/services";
 
 /**
  * Guest cart identity lives in its own httpOnly cookie. It must never share the
@@ -34,4 +35,20 @@ export async function ensureCartToken(): Promise<string> {
 export async function clearCartToken(): Promise<void> {
   const cookieStore = await cookies();
   cookieStore.delete(CART_COOKIE_NAME);
+}
+
+/**
+ * Call right after a sign-in or sign-up sets the session cookie: moves the guest
+ * cart's items into the user's cart and drops the guest cookie. Never throws, so a
+ * merge problem cannot block the sign-in itself.
+ */
+export async function claimGuestCart(userId: string): Promise<void> {
+  try {
+    const token = await getCartToken();
+    if (!token) return;
+    await mergeGuestCart(token, userId);
+    await clearCartToken();
+  } catch (err) {
+    console.error("[cart] Could not merge guest cart after sign-in:", err instanceof Error ? err.message : err);
+  }
 }

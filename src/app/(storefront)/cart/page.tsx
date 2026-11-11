@@ -1,8 +1,7 @@
-import { cookies } from "next/headers";
 import { getCurrentUser } from "@/lib/auth";
-import { getOrCreateCart } from "@/modules/cart/services";
+import { getActiveCart } from "@/modules/cart/services";
+import { getCartToken } from "@/lib/cart-session";
 import { CartView } from "@/components/cart-view";
-import { SITE_CONFIG } from "@/lib/config";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import type { Metadata } from "next";
@@ -14,13 +13,11 @@ export const metadata: Metadata = {
 
 export default async function CartPage() {
   const user = await getCurrentUser();
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get(SITE_CONFIG.sessionCookieName)?.value;
+  // Guests are identified by the cart cookie (the same one /api/cart/items sets)
+  const sessionToken = user ? undefined : await getCartToken();
+  const cart = await getActiveCart(sessionToken, user?.id);
 
-  const cart = await getOrCreateCart(sessionToken, user?.id);
-
-  // Map to CartItemType
-  const initialItems = cart.items.map((i) => ({
+  const initialItems = (cart?.items ?? []).map((i) => ({
     id: i.id,
     variantId: i.variantId,
     quantity: i.quantity,

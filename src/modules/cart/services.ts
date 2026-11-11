@@ -25,6 +25,41 @@ export async function assertCartAccess(
   return cart;
 }
 
+const CART_INCLUDE = {
+  items: {
+    include: {
+      variant: {
+        include: {
+          product: {
+            include: {
+              media: { where: { isThumbnail: true } },
+              sellerOrg: true,
+            },
+          },
+          inventoryLevel: true,
+        },
+      },
+    },
+  },
+} as const;
+
+/**
+ * Read-only lookup for pages: signed-in users by userId, guests by the cart cookie
+ * token. Never creates a cart, so viewing /cart or /checkout leaves no empty rows.
+ */
+export async function getActiveCart(sessionToken?: string, userId?: string) {
+  if (userId) {
+    return prisma.cart.findFirst({ where: { userId, status: CartStatus.ACTIVE }, include: CART_INCLUDE });
+  }
+  if (sessionToken) {
+    return prisma.cart.findFirst({
+      where: { sessionToken, userId: null, status: CartStatus.ACTIVE },
+      include: CART_INCLUDE,
+    });
+  }
+  return null;
+}
+
 export async function getOrCreateCart(sessionToken?: string, userId?: string) {
   let cart = null;
 

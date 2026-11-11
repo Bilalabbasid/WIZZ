@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { hashPassword, createSessionToken } from "@/lib/auth";
 import { SITE_CONFIG } from "@/lib/config";
 import { cookies } from "next/headers";
+import { claimGuestCart } from "@/lib/cart-session";
 import { UserRole } from "@prisma/client";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -72,6 +73,7 @@ export async function POST(req: NextRequest) {
       sameSite: "lax",
       maxAge: 60 * 60 * 24 * SITE_CONFIG.sessionExpiryDays,
     });
+    await claimGuestCart(user.id);
 
     return NextResponse.json({
       success: true,

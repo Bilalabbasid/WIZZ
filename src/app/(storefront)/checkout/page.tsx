@@ -1,9 +1,8 @@
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
 import { getCurrentUser } from "@/lib/auth";
-import { getOrCreateCart } from "@/modules/cart/services";
+import { getActiveCart } from "@/modules/cart/services";
+import { getCartToken } from "@/lib/cart-session";
 import { CheckoutView } from "@/components/checkout-view";
-import { SITE_CONFIG } from "@/lib/config";
 import { prisma } from "@/lib/db";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
@@ -21,12 +20,11 @@ export interface CheckoutPageProps {
 export default async function CheckoutPage({ searchParams }: CheckoutPageProps) {
   const { coupon } = await searchParams;
   const user = await getCurrentUser();
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get(SITE_CONFIG.sessionCookieName)?.value;
+  // Guests are identified by the cart cookie (the same one /api/cart/items sets)
+  const sessionToken = user ? undefined : await getCartToken();
+  const cart = await getActiveCart(sessionToken, user?.id);
 
-  const cart = await getOrCreateCart(sessionToken, user?.id);
-
-  if (cart.items.length === 0) {
+  if (!cart || cart.items.length === 0) {
     redirect("/cart");
   }
 

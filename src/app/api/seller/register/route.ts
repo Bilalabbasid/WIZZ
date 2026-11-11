@@ -3,6 +3,7 @@ import { registerSellerAccount } from "@/modules/sellers/services";
 import { createSessionToken } from "@/lib/auth";
 import { SITE_CONFIG } from "@/lib/config";
 import { cookies } from "next/headers";
+import { claimGuestCart } from "@/lib/cart-session";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 export async function POST(req: NextRequest) {
@@ -58,6 +59,7 @@ export async function POST(req: NextRequest) {
       sameSite: "lax",
       maxAge: 60 * 60 * 24 * SITE_CONFIG.sessionExpiryDays,
     });
+    await claimGuestCart(user.id);
 
     return NextResponse.json({
       success: true,
