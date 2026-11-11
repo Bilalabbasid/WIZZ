@@ -1,8 +1,10 @@
 /**
  * Pre-build check for production deploys (run by `npm run deploy:build`).
  * Fails fast with a readable list instead of a broken or insecure deployment.
- * Never prints secret values.
+ * Never prints secret values. Reads variables from the environment and from .env /
+ * .env.production in the project root (dashboard values win over files).
  */
+require("@next/env").loadEnvConfig(process.cwd(), false, { info: () => {}, error: console.error });
 const errors = [];
 const warnings = [];
 const env = process.env;
@@ -13,7 +15,9 @@ const placeholder = (v) => !v || /replace-with|change_me|changeme|example|your[-
 if (!env.DATABASE_URL) errors.push("DATABASE_URL is missing (PostgreSQL connection string).");
 else if (!/^postgres(ql)?:\/\//.test(env.DATABASE_URL)) errors.push("DATABASE_URL must start with postgresql://");
 else if (/@(localhost|127\.0\.0\.1)[:/]/.test(env.DATABASE_URL) && env.ALLOW_LOCAL_DATABASE !== "true")
-  warnings.push("DATABASE_URL points at localhost. On Cloudways use the connection string of the database you provisioned.");
+  warnings.push(
+    "DATABASE_URL points at localhost. Correct for a VPS running its own PostgreSQL; on Cloudways use the provisioned database's connection string."
+  );
 
 // Secrets
 for (const key of ["JWT_SECRET", "CRON_SECRET", "PAYMENT_WEBHOOK_SECRET"]) {

@@ -13,9 +13,9 @@ WIZZ.PK is a full-stack, enterprise-grade Next.js e-commerce marketplace requiri
    - **Plans**: KVM 1, KVM 2, KVM 4, or KVM 8 running Ubuntu 22.04 / 24.04 LTS.
    - **Process Manager**: PM2 or Docker / systemd.
    - **Reverse Proxy**: Nginx or OpenLiteSpeed with SSL via Let's Encrypt / Certbot.
-   - **Node.js Runtime**: Node.js 20.x LTS or 22.x LTS.
+   - **Node.js Runtime**: Node.js 22.x LTS or newer (required).
 2. **Hostinger Cloud / Business Web App**:
-   - Uses Hostinger's Node.js Web App Manager.
+   - Uses Hostinger's Node.js Web App Manager. These plans include MySQL only, so use an external PostgreSQL database (e.g. Neon or Supabase) and put its URL in `DATABASE_URL`. Build command: `npm ci --include=dev && npm run deploy:build`.
    - Set Startup File to `scripts/start-server.js` or Run Command `npm start` (the wrapper binds to `0.0.0.0` on `PORT`).
 
 ---
@@ -58,67 +58,84 @@ cp .env.example .env
 
 ## 3. Step-by-Step Deployment Guide (Hostinger VPS)
 
-### Step 1: Server Provisioning & Dependencies
-Connect via SSH to your Hostinger VPS and install Node.js 20 LTS, Git, and PostgreSQL:
+### Step 1: Server Packages (Ubuntu 22.04 / 24.04 VPS)
+Connect via SSH (`ssh root@<your-vps-ip>`) and install Node.js 22, Git, Nginx, PostgreSQL and PM2:
 
 ```bash
-# Update packages
 sudo apt update && sudo apt upgrade -y
 
-# Install Node.js 20 LTS
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt install -y nodejs git nginx
+# Node.js 22 LTS (the app requires Node 22 or newer)
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt install -y nodejs git nginx postgresql postgresql-contrib
 
-# Verify versions
-node -v   # Should output v20.x.x
-npm -v    # Should output 10.x.x
-
-# Install PM2 globally
+node -v   # v22.x.x
 sudo npm install -g pm2
 ```
 
-### Step 2: Clone Repository & Install Packages
+### Step 2: Create the Database
 ```bash
-git clone https://github.com/your-org/wizz.pk.git /var/www/wizz.pk
+sudo -u postgres psql
+```
+In the `psql` prompt (choose your own strong password):
+```sql
+CREATE USER wizz WITH PASSWORD 'choose-a-strong-db-password';
+CREATE DATABASE wizz_pk_prod OWNER wizz;
+\q
+```
+Your `DATABASE_URL` is then:
+```
+postgresql://wizz:choose-a-strong-db-password@127.0.0.1:5432/wizz_pk_prod?schema=public&connection_limit=10
+```
+
+### Step 3: Get the Code
+```bash
+git clone https://github.com/Bilalabbasid/WIZZ.git /var/www/wizz.pk
 cd /var/www/wizz.pk
-
-# Clean install exact production dependencies
-npm ci
+npm ci --include=dev
 ```
 
-### Step 3: Database Migration & Schema Sync
+### Step 4: Create `.env`
 ```bash
-# Push schema to production PostgreSQL (without deleting data)
-npx prisma db push
+cp .env.example .env
+nano .env
+```
+Set at least: `DATABASE_URL` (from Step 2), `APP_URL` and `NEXT_PUBLIC_APP_URL` (`https://wizz.pk`), `JWT_SECRET`, `CRON_SECRET`, `PAYMENT_WEBHOOK_SECRET` (each from `openssl rand -base64 32`, all different), `ADMIN_EMAIL`, `ADMIN_PASSWORD` (12+ characters), the `SMTP_*` values and `UPLOAD_DIR="/var/data/wizz-uploads"` (or the `S3_*` values). Delete the `ADMIN_EMAIL`/`ADMIN_PASSWORD` placeholders if you do not want an admin created. Then:
 
-# Generate Prisma Client
-npx prisma generate
+```bash
+chmod 600 .env
+sudo mkdir -p /var/data/wizz-uploads && sudo chown -R $USER:$USER /var/data/wizz-uploads
 ```
 
-### Step 4: Secure Platform Super Administrator Provisioning
-> **CRITICAL RULE**: NEVER run demo seed scripts (`prisma/seed.ts`) in production.
-Provision the initial Super Administrator securely:
+> **NEVER** run `npm run seed` (`prisma/seed.ts`) in production: it creates demo accounts whose passwords are published in SETUP.md. It refuses to run with `NODE_ENV=production`.
 
+### Step 5: Build
 ```bash
-npx tsx scripts/create-admin.ts admin@wizz.pk 'YourVeryStrongPassword2026!' 'Platform Administrator'
+NODE_ENV=production npm run deploy:build
 ```
+This checks `.env` (and stops with a list of problems if something is missing), creates/updates the database tables without deleting data, creates the WIZZ.PK Direct store, the categories and your admin account (first run only), then builds the site.
 
-### Step 5: Production Build & Asset Synchronization
+Optional, staging only: `SEED_DEMO_CATALOG=true NODE_ENV=production npm run deploy:build` also loads the 52-product demo catalog (it archives published products that are not in the demo list).
+
+### Step 6: Start with PM2
 ```bash
-# Runs next build with output: standalone and synchronizes static assets
-npm run build
-```
-
-### Step 6: Configure PM2 Process Manager
-Create or run PM2 to keep the standalone server running and restart on crash:
-
-```bash
-pm2 start .next/standalone/server.js --name "wizz-pk" --env PORT=3000,HOSTNAME=0.0.0.0
+pm2 start ecosystem.config.js
 pm2 save
-pm2 startup
+pm2 startup        # run the command it prints, so the app starts after a reboot
+curl -s http://127.0.0.1:3000/api/health   # {"status":"healthy",...}
+```
+`ecosystem.config.js` starts `scripts/start-server.js` on `127.0.0.1:3000` (only Nginx can reach it) and reads secrets from `.env` at every start. After editing `.env`, run `pm2 restart wizz-pk`.
+
+### Updating to a new version
+```bash
+cd /var/www/wizz.pk
+git pull
+npm ci --include=dev
+NODE_ENV=production npm run deploy:build
+pm2 restart wizz-pk
 ```
 
 ### Step 7: Nginx Reverse Proxy & SSL Configuration
+Point your domain's A record at the VPS IP first (Hostinger hPanel → DNS).
 Create `/etc/nginx/sites-available/wizz.pk`:
 
 ```nginx
@@ -222,9 +239,9 @@ gunzip -c /var/backups/wizz_db_2026-10-20.sql.gz | psql -U db_user -h 127.0.0.1 
 ### Application Rollback
 ```bash
 # Return to previous commit
-git reset --hard <previous-stable-commit-hash>
-npm ci
-npm run build
+git checkout <previous-stable-commit-hash>
+npm ci --include=dev
+NODE_ENV=production npm run deploy:build
 pm2 restart wizz-pk
 ```
 

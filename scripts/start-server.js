@@ -17,6 +17,10 @@ if (!fs.existsSync(serverFile)) {
   process.exit(1);
 }
 
+// Load .env / .env.production from the project root at every start, so edited values
+// apply after a restart (the build only snapshots .env into .next/standalone).
+require("@next/env").loadEnvConfig(path.join(__dirname, ".."), false, { info: () => {}, error: console.error });
+
 process.env.HOSTNAME = process.env.BIND_HOST || "0.0.0.0";
 process.env.PORT = process.env.PORT || "3000";
 process.env.NODE_ENV = process.env.NODE_ENV || "production";
