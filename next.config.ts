@@ -1,7 +1,20 @@
 import type { NextConfig } from "next";
 
+// Set by scripts/build-production.js for hosts that limit process count (shared hosting)
+const lowResourceBuild = process.env.WIZZ_LOW_RESOURCE_BUILD === "1";
+
 const nextConfig: NextConfig = {
   output: "standalone",
+  ...(lowResourceBuild
+    ? {
+        experimental: {
+          cpus: 1, // one static-generation worker instead of one per CPU core
+          webpackBuildWorker: false, // compile in the main process
+          parallelServerCompiles: false,
+          parallelServerBuildTraces: false,
+        },
+      }
+    : {}),
   images: {
     remotePatterns: [
       {

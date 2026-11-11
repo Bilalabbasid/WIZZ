@@ -41,7 +41,7 @@ Why these commands:
   1. `scripts/check-deploy-env.js`: stops the deploy with a clear list if required variables are missing or still placeholders.
   2. `prisma generate` and `prisma db push`: creates/updates database tables. It refuses changes that would delete data.
   3. `scripts/bootstrap-production.ts`: creates the WIZZ.PK Direct store, the 6 categories and (once) your admin account. Safe to run on every deploy; it never overwrites admin edits.
-  4. `npm run build`: Next.js production build (standalone output).
+  4. `scripts/build-production.js`: Next.js production build with webpack and a single build worker (shared and small hosts cap process counts; Turbopack crashes there with "creating new process").
 - `npm start` runs `scripts/start-server.js`, which starts `.next/standalone/server.js` bound to `0.0.0.0` on the platform's `PORT`. (`next start` does not work with standalone output.)
 
 ---

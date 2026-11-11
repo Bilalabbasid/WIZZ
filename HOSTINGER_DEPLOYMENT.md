@@ -112,7 +112,7 @@ sudo mkdir -p /var/data/wizz-uploads && sudo chown -R $USER:$USER /var/data/wizz
 ```bash
 NODE_ENV=production npm run deploy:build
 ```
-This checks `.env` (and stops with a list of problems if something is missing), creates/updates the database tables without deleting data, creates the WIZZ.PK Direct store, the categories and your admin account (first run only), then builds the site.
+This checks `.env` (and stops with a list of problems if something is missing), creates/updates the database tables without deleting data, creates the WIZZ.PK Direct store, the categories and your admin account (first run only), then builds the site with webpack and a single build worker. (Hostinger limits how many processes an account can start; the default Turbopack build fails there with "An unexpected Turbopack error ... creating new process".)
 
 Optional, staging only: `SEED_DEMO_CATALOG=true NODE_ENV=production npm run deploy:build` also loads the 52-product demo catalog (it archives published products that are not in the demo list).
 
