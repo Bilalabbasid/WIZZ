@@ -18,6 +18,7 @@ import Link from "next/link";
 import { getCommerceSettings } from "@/lib/commerce-settings";
 import { Search } from "lucide-react";
 import type { Metadata } from "next";
+import { connection } from "next/server";
 
 export interface SearchPageProps {
   searchParams: Promise<{
@@ -59,6 +60,8 @@ export async function generateMetadata({ searchParams }: SearchPageProps): Promi
 }
 
 export default async function SearchPage({ searchParams }: SearchPageProps) {
+  // Render per request (never query the database during `next build`)
+  await connection();
   const { freeShippingThresholdMinor } = await getCommerceSettings();
   const rawParams = await searchParams;
   const query = typeof rawParams.q === "string" ? rawParams.q.trim() : "";

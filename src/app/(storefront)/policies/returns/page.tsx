@@ -3,6 +3,7 @@ import Link from "next/link";
 import { SITE_CONFIG } from "@/lib/config";
 import { getCommerceSettings } from "@/lib/commerce-settings";
 import { PolicySection, PolicyShell } from "../_components/policy-shell";
+import { connection } from "next/server";
 
 export const metadata: Metadata = {
   title: "Returns policy",
@@ -11,6 +12,8 @@ export const metadata: Metadata = {
 };
 
 export default async function ReturnsPolicyPage() {
+  // Render per request (never query the database during `next build`)
+  await connection();
   const { returnWindowDays } = await getCommerceSettings();
 
   return (

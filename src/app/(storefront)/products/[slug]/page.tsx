@@ -9,6 +9,7 @@ import { prisma } from "@/lib/db";
 import Link from "next/link";
 import { getCommerceSettings } from "@/lib/commerce-settings";
 import type { Metadata } from "next";
+import { connection } from "next/server";
 
 export interface ProductPageProps {
   params: Promise<{ slug: string }>;
@@ -63,6 +64,8 @@ export async function generateMetadata({ params }: ProductPageProps): Promise<Me
 }
 
 export default async function ProductDetailPage({ params }: ProductPageProps) {
+  // Render per request (never query the database during `next build`)
+  await connection();
   const { slug } = await params;
   const product = await getProductBySlug(slug);
 

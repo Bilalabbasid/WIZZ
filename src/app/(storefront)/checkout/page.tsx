@@ -9,6 +9,7 @@ import { getCommerceSettings } from "@/lib/commerce-settings";
 import { prisma } from "@/lib/db";
 import Link from "next/link";
 import type { Metadata } from "next";
+import { connection } from "next/server";
 
 export const metadata: Metadata = {
   title: "Checkout",
@@ -20,6 +21,8 @@ export interface CheckoutPageProps {
 }
 
 export default async function CheckoutPage({ searchParams }: CheckoutPageProps) {
+  // Render per request (never query the database during `next build`)
+  await connection();
   const { coupon } = await searchParams;
   const couponParam = (Array.isArray(coupon) ? coupon[0] : coupon)?.trim().slice(0, 40) ?? "";
 

@@ -11,6 +11,7 @@ import { HomeDealsStrip } from "@/components/home-deals-strip";
 import { HomeJustListed } from "@/components/home-just-listed";
 import { HomePromiseCards } from "@/components/home-promise-cards";
 import type { HomeTileProduct } from "@/components/home-product-tile";
+import { connection } from "next/server";
 
 export const metadata: Metadata = {
   title: { absolute: "WIZZ.PK — Shop online, pay cash on delivery across Pakistan" },
@@ -104,6 +105,8 @@ function liveDealEnd(p: TileRow, now: Date): Date | null {
 }
 
 export default async function HomePage() {
+  // Render per request (never query the database during `next build`)
+  await connection();
   const [{ returnWindowDays }, categories, listingRows, dealRows, categoryCovers] = await Promise.all([
     getCommerceSettings(),
     getCategories(),

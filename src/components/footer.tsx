@@ -4,6 +4,7 @@ import { getCommerceSettings } from "@/lib/commerce-settings";
 import { formatCurrency } from "@/lib/formatters";
 import { getCategories } from "@/modules/catalog/services";
 import { WizzDot } from "./wizz-logo";
+import { connection } from "next/server";
 
 const eyebrowClass = "font-mono text-[11px] uppercase tracking-[0.08em] text-mute";
 const linkClass = "text-ink hover:text-ink-2 hover:underline underline-offset-4 decoration-brand-300";
@@ -26,6 +27,8 @@ function FooterColumn({ title, links }: { title: string; links: Array<{ href: st
 }
 
 export async function Footer() {
+  // Render per request: never query the database while `next build` prerenders
+  await connection();
   const [categories, { freeShippingThresholdMinor, returnWindowDays }] = await Promise.all([
     getCategories(),
     getCommerceSettings(),

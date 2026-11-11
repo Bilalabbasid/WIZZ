@@ -20,6 +20,7 @@ import {
   type ActiveFilterChip,
 } from "@/components/catalog-ui";
 import type { Metadata } from "next";
+import { connection } from "next/server";
 
 export interface CategoryPageProps {
   params: Promise<{ slug: string }>;
@@ -56,7 +57,7 @@ export async function generateMetadata({ params, searchParams }: CategoryPagePro
   }
 
   const canonicalUrl = `${SITE_CONFIG.canonicalUrl}/categories/${category.slug}`;
-  const title = `${category.name} | WIZZ.PK Marketplace`;
+  const title = category.name;
   const description = category.description || `Browse high-performance verified hardware and physical products in ${category.name} on WIZZ.PK.`;
 
   // Policy for filter combinations:
@@ -98,6 +99,8 @@ export async function generateMetadata({ params, searchParams }: CategoryPagePro
 }
 
 export default async function CategoryPage({ params, searchParams }: CategoryPageProps) {
+  // Render per request (never query the database during `next build`)
+  await connection();
   const { freeShippingThresholdMinor } = await getCommerceSettings();
   const { slug } = await params;
   const rawParams = await searchParams;

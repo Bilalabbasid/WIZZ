@@ -2,8 +2,11 @@ import type { MetadataRoute } from "next";
 import { prisma } from "@/lib/db";
 import { SITE_CONFIG } from "@/lib/config";
 import { ProductStatus } from "@prisma/client";
+import { connection } from "next/server";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  // Render per request: never query the database while `next build` prerenders
+  await connection();
   const baseUrl = SITE_CONFIG.canonicalUrl;
 
   // 1. Static Core Landing & Legal Policy Pages

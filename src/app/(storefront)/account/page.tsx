@@ -10,6 +10,7 @@ import { AccountSignOutButton } from "@/components/account-sign-out-button";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { Package, ChevronRight, ChevronLeft, Heart } from "lucide-react";
+import { connection } from "next/server";
 
 export const metadata: Metadata = {
   title: "Your account",
@@ -33,6 +34,8 @@ export default async function AccountPage({
 }: {
   searchParams: Promise<{ page?: string | string[] }>;
 }) {
+  // Render per request (never query the database during `next build`)
+  await connection();
   const user = await getCurrentUser();
 
   if (!user) {

@@ -21,6 +21,7 @@ import {
   RotateCcw,
   Banknote,
 } from "lucide-react";
+import { connection } from "next/server";
 
 export const metadata: Metadata = {
   title: "Order details",
@@ -90,6 +91,8 @@ function safeHttpsUrl(url: string | null | undefined): string | null {
 }
 
 export default async function OrderDetailPage({ params, searchParams }: OrderPageProps) {
+  // Render per request (never query the database during `next build`)
+  await connection();
   const { id } = await params;
   const { t } = await searchParams;
   const accessToken = Array.isArray(t) ? t[0] : t;

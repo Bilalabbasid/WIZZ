@@ -3,6 +3,7 @@ import { SITE_CONFIG } from "@/lib/config";
 import { getCommerceSettings } from "@/lib/commerce-settings";
 import { formatCurrency } from "@/lib/formatters";
 import { PolicySection, PolicyShell } from "../_components/policy-shell";
+import { connection } from "next/server";
 
 export const metadata: Metadata = {
   title: "Shipping policy",
@@ -11,6 +12,8 @@ export const metadata: Metadata = {
 };
 
 export default async function ShippingPolicyPage() {
+  // Render per request (never query the database during `next build`)
+  await connection();
   const { freeShippingThresholdMinor, standardShippingMinor, expressShippingMinor, codMaxOrderMinor } =
     await getCommerceSettings();
 

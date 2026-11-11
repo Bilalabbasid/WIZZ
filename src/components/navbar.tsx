@@ -11,6 +11,7 @@ import { HeaderSearchOutsideHome, MarketplaceSearch } from "./marketplace-search
 import { MegaMenu } from "./mega-menu";
 import { WizzLogo } from "./wizz-logo";
 import { MobileDock } from "./mobile-dock";
+import { connection } from "next/server";
 
 /** Request-scoped: the header, the mobile dock and pages share one lookup. */
 const getHeaderUser = cache(getCurrentUser);
@@ -33,6 +34,8 @@ const roundButtonClass =
   "size-11 rounded-full border border-line bg-white text-ink flex items-center justify-center hover:border-ink transition-colors flex-shrink-0";
 
 export async function Navbar() {
+  // Render per request: never query the database while `next build` prerenders
+  await connection();
   const [user, cartItemCount, categoryRows] = await Promise.all([
     getHeaderUser(),
     getHeaderCartCount(),
@@ -163,6 +166,8 @@ export async function Navbar() {
 
 /** Mobile dock for the storefront layout; place it after the footer (it renders its own spacer). */
 export async function StorefrontDock() {
+  // Render per request: never query the database while `next build` prerenders
+  await connection();
   const [user, cartCount] = await Promise.all([getHeaderUser(), getHeaderCartCount()]);
   return <MobileDock cartCount={cartCount} signedIn={Boolean(user)} />;
 }

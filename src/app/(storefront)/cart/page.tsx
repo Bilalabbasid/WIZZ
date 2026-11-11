@@ -5,6 +5,7 @@ import { getCartToken } from "@/lib/cart-session";
 import { CartView } from "@/components/cart-view";
 import { getCommerceSettings } from "@/lib/commerce-settings";
 import type { Metadata } from "next";
+import { connection } from "next/server";
 
 export const metadata: Metadata = {
   title: "Cart",
@@ -12,6 +13,8 @@ export const metadata: Metadata = {
 };
 
 export default async function CartPage() {
+  // Render per request (never query the database during `next build`)
+  await connection();
   const user = await getCurrentUser();
   // Guests are identified by the cart cookie (the same one /api/cart/items sets)
   const sessionToken = user ? undefined : await getCartToken();
