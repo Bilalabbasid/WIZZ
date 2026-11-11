@@ -19,7 +19,6 @@ const path = require("path");
 
 const root = path.join(__dirname, "..");
 const env = { ...process.env, WIZZ_LOW_RESOURCE_BUILD: "1", NEXT_TELEMETRY_DISABLED: "1" };
-const isWindows = process.platform === "win32";
 
 const runDeploySteps =
   process.env.WIZZ_SKIP_DEPLOY_STEPS !== "1" &&
@@ -27,22 +26,32 @@ const runDeploySteps =
 
 function run(label, command, args) {
   console.log(`\n[build] ${label}`);
-  // Only npx needs a shell on Windows (npx.cmd); node is spawned directly so paths with spaces work
-  const res = spawnSync(command, args, { cwd: root, env, stdio: "inherit", shell: isWindows && command === npx });
+  const res = spawnSync(command, args, { cwd: root, env, stdio: "inherit" });
   if (res.status !== 0) {
     console.error(`[build] FAILED: ${label}`);
     process.exit(res.status ?? 1);
   }
 }
 
+// Resolve the project's own CLIs (never `npx`, which could download a different version)
+function localBin(file, hint) {
+  try {
+    return require.resolve(file, { paths: [root] });
+  } catch {
+    console.error(`[build] Missing ${hint}. Run \`npm install\` (it is a regular dependency, so it installs even with NODE_ENV=production).`);
+    process.exit(1);
+  }
+}
+
 const node = process.execPath;
-const npx = isWindows ? "npx.cmd" : "npx";
 
 if (runDeploySteps) {
+  const prismaCli = localBin("prisma/build/index.js", "the prisma package");
+  const tsxCli = localBin("tsx/cli", "the tsx package");
   run("Checking environment variables", node, [path.join(__dirname, "check-deploy-env.js")]);
-  run("Generating Prisma client", npx, ["prisma", "generate"]);
-  run("Updating database schema (no data loss)", npx, ["prisma", "db", "push", "--skip-generate"]);
-  run("Bootstrapping store, categories and admin", npx, ["tsx", path.join("scripts", "bootstrap-production.ts")]);
+  run("Generating Prisma client", node, [prismaCli, "generate"]);
+  run("Updating database schema (no data loss)", node, [prismaCli, "db", "push", "--skip-generate"]);
+  run("Bootstrapping store, categories and admin", node, [tsxCli, path.join("scripts", "bootstrap-production.ts")]);
 } else {
   console.log("[build] Deploy steps skipped (not a production build). Set NODE_ENV=production or pass --deploy to run them.");
 }
