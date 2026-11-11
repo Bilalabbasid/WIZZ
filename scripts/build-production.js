@@ -24,23 +24,49 @@ const runDeploySteps =
   process.env.WIZZ_SKIP_DEPLOY_STEPS !== "1" &&
   (process.argv.includes("--deploy") || process.env.WIZZ_DEPLOY === "1" || process.env.NODE_ENV === "production");
 
+// Errors that mean "the database is full right now", not "something is wrong"
+const POOL_FULL = /EMAXCONNSESSION|max clients reached|too many (clients|connections)|remaining connection slots are reserved|Timed out fetching a new connection/i;
+
+function sleep(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * Runs a step. Output is streamed through (and kept, to recognise pooler-full errors).
+ * options.attempts: retries for database-busy failures.
+ * options.softOnPoolFull: if the database pooler is still full after all attempts, warn and
+ *   continue instead of failing the deploy (used for idempotent steps that already succeeded
+ *   on earlier deploys while the old release is holding the connections).
+ */
 function run(label, command, args, options = {}) {
   const attempts = options.attempts || 1;
   const childEnv = options.env || env;
   for (let attempt = 1; attempt <= attempts; attempt++) {
     console.log(`\n[build] ${label}${attempts > 1 ? ` (attempt ${attempt}/${attempts})` : ""}`);
-    const res = spawnSync(command, args, { cwd: root, env: childEnv, stdio: "inherit" });
-    if (res.status === 0) return;
-    if (attempt < attempts) {
-      // Usually a busy connection pooler ("max clients reached"): wait for connections to free up
-      const waitMs = 10000 * attempt;
-      console.warn(`[build] ${label} failed; retrying in ${waitMs / 1000}s (database may be busy)...`);
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, waitMs);
+    const res = spawnSync(command, args, { cwd: root, env: childEnv, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    if (res.stdout) process.stdout.write(res.stdout);
+    if (res.stderr) process.stderr.write(res.stderr);
+    if (res.status === 0) return true;
+
+    const poolFull = POOL_FULL.test(`${res.stdout || ""}\n${res.stderr || ""}`);
+    if (attempt < attempts && (poolFull || options.retryAnyFailure)) {
+      const waitMs = 15000 * attempt;
+      console.warn(`[build] ${label} failed (${poolFull ? "database connection pool is full" : "error"}); retrying in ${waitMs / 1000}s...`);
+      sleep(waitMs);
       continue;
+    }
+    if (poolFull && options.softOnPoolFull) {
+      console.warn(
+        `\n[build] WARNING: ${label} skipped: the database connection pool is full (the running site is using it).\n` +
+          `[build] WARNING: This is safe when this release has no database schema change. The new release caps its own\n` +
+          `[build] WARNING: connections, so the next deploy will run this step normally.\n`
+      );
+      return false;
     }
     console.error(`[build] FAILED: ${label}`);
     process.exit(res.status ?? 1);
   }
+  return false;
 }
 
 /**
@@ -81,8 +107,9 @@ if (runDeploySteps) {
   run("Checking environment variables", node, [path.join(__dirname, "check-deploy-env.js")]);
   run("Generating Prisma client", node, [prismaCli, "generate"]);
   const dbEnv = singleConnectionEnv();
-  run("Updating database schema (no data loss)", node, [prismaCli, "db", "push", "--skip-generate"], { env: dbEnv, attempts: 4 });
-  run("Bootstrapping store, categories and admin", node, [tsxCli, path.join("scripts", "bootstrap-production.ts")], { env: dbEnv, attempts: 4 });
+  const dbOptions = { env: dbEnv, attempts: 4, softOnPoolFull: process.env.WIZZ_STRICT_DB_STEPS !== "1" };
+  run("Updating database schema (no data loss)", node, [prismaCli, "db", "push", "--skip-generate"], dbOptions);
+  run("Bootstrapping store, categories and admin", node, [tsxCli, path.join("scripts", "bootstrap-production.ts")], dbOptions);
 } else {
   console.log("[build] Deploy steps skipped (not a production build). Set NODE_ENV=production or pass --deploy to run them.");
 }
