@@ -25,6 +25,13 @@ const nextConfig: NextConfig = {
   },
   async redirects() {
     return [
+      // One canonical host for search engines and cookies: www.wizz.pk -> wizz.pk
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "www.wizz.pk" }],
+        destination: "https://wizz.pk/:path*",
+        permanent: true,
+      },
       {
         source: "/product/:slug",
         destination: "/products/:slug",
