@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
 import { prisma } from "@/lib/db";
 import { SITE_CONFIG } from "@/lib/config";
-import { ProductStatus } from "@prisma/client";
+import { publicProductWhere } from "@/modules/catalog/services";
 import { connection } from "next/server";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
@@ -76,11 +76,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // 3. Approved & Published Products from Active Sellers
   const products = await prisma.product.findMany({
-    where: {
-      status: ProductStatus.PUBLISHED,
-      isApprovedByPlatform: true,
-      sellerOrg: { operationalStatus: "ACTIVE" },
-    },
+    // Same visibility rule as the storefront: only pages a shopper can actually open
+    where: publicProductWhere,
     select: { slug: true, updatedAt: true },
   });
 

@@ -17,6 +17,9 @@ export default function robots(): MetadataRoute.Robots {
           "/checkout",
           "/account",
           "/orders/",
+          "/wishlist",
+          "/login",
+          "/register",
           "/search", // Prevent crawl budget waste and duplicate indexation on internal search pages
         ],
       },
