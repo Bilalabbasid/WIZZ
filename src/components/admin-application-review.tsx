@@ -28,6 +28,10 @@ export interface AdminAppItem {
   contactEmail: string;
   contactPhone: string;
   notes?: string | null;
+  bankName?: string | null;
+  bankAccountTitle?: string | null;
+  /** Masked ("•••• 1234"); the full IBAN never reaches the review screen. */
+  bankIbanMasked?: string | null;
   status: string;
   reviewerFeedback?: string | null;
   approvedOrgId?: string | null;
@@ -239,6 +243,23 @@ export function AdminApplicationReview({
                     &ldquo;{selectedApp.notes}&rdquo;
                   </p>
                 )}
+              </div>
+
+              <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
+                <span className="text-slate-500 block font-semibold uppercase tracking-wider text-[10px]">
+                  Payout Bank Account
+                </span>
+                <p className="text-slate-300">
+                  {selectedApp.bankName || "Bank not provided"} · Title:{" "}
+                  <strong className="text-white">{selectedApp.bankAccountTitle || "Not provided"}</strong>
+                </p>
+                <p className="text-slate-300">
+                  IBAN: <span className="font-mono text-white">{selectedApp.bankIbanMasked || "Not provided"}</span>
+                </p>
+                <p className="text-[10px] text-slate-500">
+                  Check that the account title matches the legal business name. Full account numbers are stored encrypted and are
+                  not shown here.
+                </p>
               </div>
 
               {/* Uploaded Documents */}

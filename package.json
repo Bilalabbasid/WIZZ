@@ -8,7 +8,8 @@
     "start": "node scripts/start-server.js",
     "lint": "eslint",
     "seed": "tsx prisma/seed.ts",
-    "test": "tsx tests/business-rules.test.ts && tsx tests/catalog-discovery-seo.test.ts && tsx tests/e2e-functional-audit.test.ts && tsx tests/security-audit-regression.test.ts && tsx tests/seller-catalog-regression.test.ts",
+    "test": "tsx tests/business-rules.test.ts && tsx tests/catalog-discovery-seo.test.ts && tsx tests/e2e-functional-audit.test.ts && tsx tests/security-audit-regression.test.ts && tsx tests/seller-catalog-regression.test.ts && tsx tests/auth-security.test.ts && tsx tests/financial-payouts.test.ts && tsx tests/financial-security.test.ts",
+    "reset-admin-mfa": "tsx scripts/reset-admin-mfa.ts",
     "deploy:build": "node scripts/build-production.js --deploy",
     "bootstrap": "tsx scripts/bootstrap-production.ts",
     "seed:catalog": "tsx scripts/seed-complete-diverse-catalog.ts",
@@ -25,15 +26,18 @@
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
     "@types/nodemailer": "^8.0.2",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "bcryptjs": "^3.0.3",
     "jose": "^6.2.12",
     "lucide-react": "^1.55.0",
-    "next": "^16.4.3",
+    "next": "^16.4.6",
     "nodemailer": "^10.1.7",
+    "otpauth": "^9.6.0",
     "postcss": "^8.5.29",
     "prisma": "^6.4.1",
+    "qrcode": "^1.5.4",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "tailwindcss": "^4",
@@ -44,9 +48,12 @@
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
     "eslint": "^9",
-    "eslint-config-next": "^16.4.3"
+    "eslint-config-next": "^16.4.6"
   },
   "engines": {
     "node": ">=22"
+  },
+  "overrides": {
+    "deepmerge-ts": "^8.0.2"
   }
 }

@@ -80,6 +80,12 @@ export function SellerOnboardingWorkspace({
     }
   );
 
+  // The server only ever returns the IBAN masked ("•••• 1234"). Sending that masked value back
+  // keeps the account on file; typing a new IBAN replaces it.
+  const ibanOnFile = app.bankIban && /[•*]/.test(app.bankIban) ? app.bankIban : null;
+  const [newIban, setNewIban] = useState(initialApplication?.bankIban && !/[•*]/.test(initialApplication.bankIban) ? initialApplication.bankIban : "");
+  const payload = (action: "draft" | "submit") => ({ ...app, bankIban: newIban.trim() || ibanOnFile || "", action });
+
   const [isSaving, setIsSaving] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -97,11 +103,12 @@ export function SellerOnboardingWorkspace({
       const res = await fetch("/api/seller/application", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...app, action: "draft" }),
+        body: JSON.stringify(payload("draft")),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to save draft.");
       setApp((prev) => ({ ...prev, ...data.application }));
+      setNewIban("");
       setFeedbackMessage("Application draft saved successfully.");
     } catch (err: unknown) {
       setErrorMessage(err instanceof Error ? err.message : "Error saving draft");
@@ -119,11 +126,12 @@ export function SellerOnboardingWorkspace({
       const res = await fetch("/api/seller/application", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...app, action: "submit" }),
+        body: JSON.stringify(payload("submit")),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to submit application.");
       setApp((prev) => ({ ...prev, ...data.application }));
+      setNewIban("");
       setFeedbackMessage("Application submitted! Platform administration has been notified.");
     } catch (err: unknown) {
       setErrorMessage(err instanceof Error ? err.message : "Error submitting application");
@@ -488,11 +496,17 @@ export function SellerOnboardingWorkspace({
 
             <Input
               label="24-Digit IBAN"
-              required
+              required={!ibanOnFile}
               disabled={isLocked}
-              placeholder="PK36MEZN0001234567890123"
-              value={app.bankIban || ""}
-              onChange={(e) => setApp({ ...app, bankIban: e.target.value })}
+              autoComplete="off"
+              placeholder={ibanOnFile ? `Saved: ${ibanOnFile}` : "PK36MEZN0001234567890123"}
+              value={newIban}
+              onChange={(e) => setNewIban(e.target.value)}
+              helperText={
+                ibanOnFile
+                  ? `On file: ${ibanOnFile}. Leave blank to keep it, or enter a new IBAN to replace it.`
+                  : "Stored encrypted. Only the last 4 digits are shown again."
+              }
             />
           </div>
         </div>

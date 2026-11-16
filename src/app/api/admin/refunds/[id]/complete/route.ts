@@ -4,6 +4,7 @@ import { PaymentStatus, RefundStatus, UserRole } from "@prisma/client";
 import { clientErrorMessage, clientErrorStatus } from "@/lib/api-error";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { assertRefundWithinPaid } from "@/modules/payments/services";
 
 const bodySchema = z.object({
   reference: z.string().trim().min(3, "Enter the reference of the refund transfer you made.").max(120),
@@ -32,6 +33,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         throw new Error("VALIDATION: This refund is not pending (already completed or not found).");
       }
       const done = await tx.refund.findUniqueOrThrow({ where: { id } });
+      // Completing a refund must still fit within what was paid (late payments are refunds of
+      // money that arrived for an already-cancelled order, so they skip the "paid" requirement)
+      await assertRefundWithinPaid(tx, {
+        customerOrderId: done.customerOrderId,
+        sellerOrderId: done.sellerOrderId,
+        amountMinor: done.amountMinor,
+        excludeRefundId: id,
+        requirePaid: !done.reason?.startsWith("LATE_PAYMENT"),
+      });
 
       const order = await tx.customerOrder.findUnique({
         where: { id: done.customerOrderId },

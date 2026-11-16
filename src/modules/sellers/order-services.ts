@@ -1,10 +1,13 @@
 import { prisma } from "@/lib/db";
 import {
+  Prisma,
+  PayoutRequestStatus,
   SellerOrderStatus,
   ShipmentStatus,
   SettlementStatus,
   SettlementEntryType,
 } from "@prisma/client";
+import { BANK_CHANGE_PAYOUT_HOLD_HOURS, maskStoredIban, payoutHoldUntil, storedIbanLast4 } from "./services";
 import { cancelSellerSuborder } from "@/modules/orders/services";
 import { assertSellerTransition, markSellerOrderDelivered, recomputeCustomerOrderStatus } from "@/modules/orders/lifecycle";
 import { transitionReturnRequest } from "@/modules/returns/services";
@@ -341,10 +344,133 @@ export async function releaseSellerSettlementHold(
   });
 }
 
+/* ------------------------------------------------------------------ */
+/* Seller balances                                                     */
+/* ------------------------------------------------------------------ */
+
+/** Prefix of the ADJUSTMENT credit that restores a failed (bounced) payout: "REV_<bank reference>". */
+export const PAYOUT_REVERSAL_PREFIX = "REV_";
+
+type Db = Prisma.TransactionClient | typeof prisma;
+
+export interface SellerBalances {
+  /** Ledger entries still PENDING (e.g. awaiting payment). */
+  pendingMinor: number;
+  /** Paid orders not yet delivered (IN_ESCROW). */
+  inEscrowMinor: number;
+  /** Entries on hold for a dispute or return (HELD). */
+  heldMinor: number;
+  /** Σ ELIGIBLE entries: delivered-order credits, refund debits, restored failed payouts. */
+  eligibleMinor: number;
+  /** Legacy: credits marked SETTLED by the retired direct-payout flow (no longer produced). */
+  settledCreditsMinor: number;
+  /** Σ |MANUAL_PAYOUT| debits not REVERSED: everything confirmed as transferred (gross, incl. bounced). */
+  paidOutMinor: number;
+  /** Σ "REV_" adjustment credits: bounced payouts returned to the balance (already inside eligibleMinor). */
+  reversedPayoutsMinor: number;
+  /** eligible + settledCredits − paidOut: what the platform owes the seller right now. */
+  ledgerBalanceMinor: number;
+  /** Σ PayoutRequests in REQUESTED: amounts waiting for the second finance admin to confirm. */
+  reservedMinor: number;
+  /** ledgerBalance − reserved: the most a new payout request may be for. Negative when refunds exceed credits. */
+  availableMinor: number;
+  payoutCount: number;
+  openRequestCount: number;
+}
+
 /**
- * Auditable manual settlement payout workflow.
- * Automated bank transfers are strictly disabled unless provider is explicitly configured.
- * Checks eligible balance, creates payout ledger entry, and logs financial audit event.
+ * The single balance function used by the seller statement, the admin payout views and every
+ * payout write (inside the write's transaction, after the SellerOrg row lock).
+ *
+ * Scheme (ledger rows are append-only; amountMinor is never updated after insert):
+ *   ledgerBalance = Σ amountMinor of entries with status ELIGIBLE or SETTLED
+ *                 = Σ ELIGIBLE (credits, refund debits, "REV_" restorations of failed payouts)
+ *                 + Σ legacy SETTLED credits (from the retired split-and-settle payout flow)
+ *                 + Σ MANUAL_PAYOUT debits (negative, status SETTLED; never REVERSED: a failed
+ *                   transfer is undone by a separate ELIGIBLE "REV_" ADJUSTMENT credit)
+ *   available     = ledgerBalance − Σ PayoutRequest.amountMinor in REQUESTED (reserved)
+ * Credits stay ELIGIBLE after being paid; each confirmed payout reduces the figure exactly once
+ * through its own debit row. PENDING / IN_ESCROW / HELD / REVERSED rows are never payable.
+ */
+export async function getSellerBalances(sellerOrgId: string, db: Db = prisma): Promise<SellerBalances> {
+  const [groups, reversalAgg, reservedAgg] = await Promise.all([
+    db.settlementLedger.groupBy({
+      by: ["status", "entryType"],
+      where: { sellerOrgId },
+      _sum: { amountMinor: true },
+      _count: { _all: true },
+    }),
+    db.settlementLedger.aggregate({
+      where: {
+        sellerOrgId,
+        entryType: SettlementEntryType.ADJUSTMENT,
+        status: SettlementStatus.ELIGIBLE,
+        referenceId: { startsWith: PAYOUT_REVERSAL_PREFIX },
+      },
+      _sum: { amountMinor: true },
+    }),
+    db.payoutRequest.aggregate({
+      where: { sellerOrgId, status: PayoutRequestStatus.REQUESTED },
+      _sum: { amountMinor: true },
+      _count: { _all: true },
+    }),
+  ]);
+
+  let pendingMinor = 0;
+  let inEscrowMinor = 0;
+  let heldMinor = 0;
+  let eligibleMinor = 0;
+  let settledCreditsMinor = 0;
+  let paidOutMinor = 0;
+  let payoutCount = 0;
+  for (const g of groups) {
+    const sum = g._sum.amountMinor ?? 0;
+    if (g.entryType === SettlementEntryType.MANUAL_PAYOUT) {
+      if (g.status !== SettlementStatus.REVERSED) {
+        paidOutMinor += -sum;
+        payoutCount += g._count._all;
+      }
+      continue;
+    }
+    if (g.status === SettlementStatus.PENDING) pendingMinor += sum;
+    else if (g.status === SettlementStatus.IN_ESCROW) inEscrowMinor += sum;
+    else if (g.status === SettlementStatus.HELD) heldMinor += sum;
+    else if (g.status === SettlementStatus.ELIGIBLE) eligibleMinor += sum;
+    else if (g.status === SettlementStatus.SETTLED) settledCreditsMinor += sum;
+  }
+  const reservedMinor = reservedAgg._sum.amountMinor ?? 0;
+  const ledgerBalanceMinor = eligibleMinor + settledCreditsMinor - paidOutMinor;
+  return {
+    pendingMinor,
+    inEscrowMinor,
+    heldMinor,
+    eligibleMinor,
+    settledCreditsMinor,
+    paidOutMinor,
+    reversedPayoutsMinor: reversalAgg._sum.amountMinor ?? 0,
+    ledgerBalanceMinor,
+    reservedMinor,
+    availableMinor: ledgerBalanceMinor - reservedMinor,
+    payoutCount,
+    openRequestCount: reservedAgg._count._all,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Retired direct payouts (kept only for the legacy test suite)         */
+/* ------------------------------------------------------------------ */
+
+function assertLegacyPayoutsAllowed() {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("FEATURE_DISABLED: Direct payouts are retired. Use the payout queue (request, then confirmation by a second finance admin).");
+  }
+}
+
+/**
+ * @deprecated Retired single-operator payout. No API route calls this any more: payouts go through
+ * PayoutRequest (maker-checker) in modules/admin/finance.ts. Kept so the legacy business-rules
+ * suite keeps running; refuses to run in production. Uses the same lock and balance function as
+ * the new flow, never mutates existing ledger rows and stores only the last 4 IBAN digits.
  */
 export async function processManualSellerSettlement(input: {
   sellerOrgId: string;
@@ -353,99 +479,49 @@ export async function processManualSellerSettlement(input: {
   notes?: string;
   actorUserId: string;
 }) {
-  const { sellerOrgId, payoutAmountMinor, bankTransactionRef, notes, actorUserId } = input;
-
-  if (payoutAmountMinor <= 0) {
-    throw new Error("Payout amount must be greater than zero.");
+  assertLegacyPayoutsAllowed();
+  const { sellerOrgId, payoutAmountMinor, notes, actorUserId } = input;
+  if (!Number.isInteger(payoutAmountMinor) || payoutAmountMinor <= 0) {
+    throw new Error("VALIDATION: Payout amount must be a whole number of paisa greater than zero.");
   }
-
-  const sellerOrg = await prisma.sellerOrg.findUnique({
-    where: { id: sellerOrgId },
-  });
-
-  if (!sellerOrg) {
-    throw new Error("Seller organization not found.");
+  const ref = String(input.bankTransactionRef || "").trim();
+  if (ref.length < 3 || ref.length > 120) {
+    throw new Error("VALIDATION: Enter the bank transfer reference (3-120 characters).");
   }
 
   return prisma.$transaction(async (tx) => {
-    // Serialize payouts per seller: lock the org row, then read the eligible balance
     await tx.$queryRaw`SELECT id FROM "SellerOrg" WHERE id = ${sellerOrgId} FOR UPDATE`;
-    const ref = String(bankTransactionRef || "").trim();
-    if (ref.length < 3 || ref.length > 120) {
-      throw new Error("VALIDATION: Enter the bank transfer reference (3-120 characters).");
-    }
+    const sellerOrg = await tx.sellerOrg.findUnique({
+      where: { id: sellerOrgId },
+      select: { id: true, name: true, bankName: true, bankIban: true },
+    });
+    if (!sellerOrg) throw new Error("VALIDATION: Seller organization not found.");
     const duplicate = await tx.settlementLedger.findFirst({
       where: { sellerOrgId, entryType: SettlementEntryType.MANUAL_PAYOUT, referenceId: ref },
       select: { id: true },
     });
     if (duplicate) throw new Error("VALIDATION: A payout with this bank reference was already recorded for this seller.");
-    const eligibleEntries = await tx.settlementLedger.findMany({
-      where: { sellerOrgId, status: SettlementStatus.ELIGIBLE },
-      orderBy: { amountMinor: "asc" }, // debits (negative) first so they net against credits
-    });
-    const totalEligibleMinor = eligibleEntries.reduce((sum, e) => sum + e.amountMinor, 0);
-    if (payoutAmountMinor > totalEligibleMinor) {
+
+    const balances = await getSellerBalances(sellerOrgId, tx);
+    if (payoutAmountMinor > balances.availableMinor) {
       throw new Error(
-        `VALIDATION: Requested payout PKR ${payoutAmountMinor / 100} exceeds the eligible balance PKR ${totalEligibleMinor / 100}.`
+        `VALIDATION: Requested payout PKR ${payoutAmountMinor / 100} exceeds the eligible balance PKR ${balances.availableMinor / 100}.`
       );
     }
-
-    // 1. Mark eligible entries as SETTLED up to payoutAmountMinor
-    let remainingToSettle = payoutAmountMinor;
-    for (const entry of eligibleEntries) {
-      if (entry.amountMinor < 0) {
-        // Debits (refunds) are netted into this payout
-        await tx.settlementLedger.update({
-          where: { id: entry.id },
-          data: { status: SettlementStatus.SETTLED, settledAt: new Date() },
-        });
-        remainingToSettle -= entry.amountMinor;
-        continue;
-      }
-      if (remainingToSettle <= 0) break;
-      if (entry.amountMinor <= remainingToSettle) {
-        await tx.settlementLedger.update({
-          where: { id: entry.id },
-          data: { status: SettlementStatus.SETTLED, settledAt: new Date() },
-        });
-        remainingToSettle -= entry.amountMinor;
-      } else {
-        await tx.settlementLedger.update({
-          where: { id: entry.id },
-          data: { amountMinor: entry.amountMinor - remainingToSettle },
-        });
-        await tx.settlementLedger.create({
-          data: {
-            sellerOrgId,
-            sellerOrderId: entry.sellerOrderId,
-            entryType: entry.entryType,
-            amountMinor: remainingToSettle,
-            balanceAfterMinor: 0,
-            status: SettlementStatus.SETTLED,
-            description: entry.description,
-            settledAt: new Date(),
-          },
-        });
-        remainingToSettle = 0;
-      }
-    }
-
-    // 2. Record debit payout transaction
+    const ibanLast4 = storedIbanLast4(sellerOrg.bankIban);
     const payoutLedger = await tx.settlementLedger.create({
       data: {
         sellerOrgId,
         entryType: SettlementEntryType.MANUAL_PAYOUT,
         amountMinor: -payoutAmountMinor,
-        balanceAfterMinor: totalEligibleMinor - payoutAmountMinor,
+        balanceAfterMinor: balances.ledgerBalanceMinor - payoutAmountMinor,
         status: SettlementStatus.SETTLED,
-        description: `Manual bank remittance to ${sellerOrg.bankName || "Account"}: ${bankTransactionRef}${notes ? ` (${notes})` : ""}`,
-        referenceId: bankTransactionRef,
+        description: `Manual bank remittance to ${sellerOrg.bankName || "account"}${ibanLast4 ? ` •••• ${ibanLast4}` : ""}: ${ref}${notes ? ` (${notes})` : ""}`,
+        referenceId: ref,
         actorUserId,
         settledAt: new Date(),
       },
     });
-
-    // 3. Create immutable financial audit event
     await tx.auditEvent.create({
       data: {
         actorUserId,
@@ -454,29 +530,27 @@ export async function processManualSellerSettlement(input: {
         action: "MANUAL_PAYOUT_EXECUTED",
         detailsJson: JSON.stringify({
           sellerOrgId,
-          sellerName: sellerOrg.name,
           payoutAmountMinor,
-          bankTransactionRef,
-          remainingEligibleBalanceMinor: totalEligibleMinor - payoutAmountMinor,
+          bankTransactionRef: ref,
+          remainingAvailableMinor: balances.availableMinor - payoutAmountMinor,
           recipientBank: sellerOrg.bankName,
-          recipientAccountTitle: sellerOrg.bankAccountTitle,
-          recipientIban: sellerOrg.bankIban,
+          recipientIbanLast4: ibanLast4,
         }),
       },
     });
-
     return {
       payoutId: payoutLedger.id,
       sellerOrgId,
       payoutAmountMinor,
-      bankTransactionRef,
-      remainingEligibleBalanceMinor: totalEligibleMinor - payoutAmountMinor,
+      bankTransactionRef: ref,
+      remainingEligibleBalanceMinor: balances.availableMinor - payoutAmountMinor,
     };
   });
 }
 
 /**
- * Reverses a failed or bounced manual bank payout with compensating adjustment.
+ * @deprecated Retired with processManualSellerSettlement. Payouts made through the payout queue
+ * are marked failed with markPayoutRequestFailed (modules/admin/finance.ts); this refuses them.
  */
 export async function recordFailedPayoutAdjustment(input: {
   sellerOrgId: string;
@@ -484,40 +558,35 @@ export async function recordFailedPayoutAdjustment(input: {
   failureReason: string;
   actorUserId: string;
 }) {
+  assertLegacyPayoutsAllowed();
   const { sellerOrgId, payoutReferenceId, failureReason, actorUserId } = input;
-
-  const payoutEntry = await prisma.settlementLedger.findFirst({
-    where: {
-      sellerOrgId,
-      entryType: SettlementEntryType.MANUAL_PAYOUT,
-      referenceId: payoutReferenceId,
-    },
-  });
-
-  if (!payoutEntry) {
-    throw new Error(`Payout transaction with reference "${payoutReferenceId}" not found.`);
-  }
-
-  const restoredAmount = Math.abs(payoutEntry.amountMinor);
 
   return prisma.$transaction(async (tx) => {
     // Same lock as payouts: a reversal can only be recorded once
     await tx.$queryRaw`SELECT id FROM "SellerOrg" WHERE id = ${sellerOrgId} FOR UPDATE`;
+    const payoutEntry = await tx.settlementLedger.findFirst({
+      where: { sellerOrgId, entryType: SettlementEntryType.MANUAL_PAYOUT, referenceId: payoutReferenceId },
+    });
+    if (!payoutEntry) throw new Error(`VALIDATION: Payout transaction with reference "${payoutReferenceId}" not found.`);
+    const linkedRequest = await tx.payoutRequest.findFirst({ where: { ledgerEntryId: payoutEntry.id }, select: { id: true } });
+    if (linkedRequest) throw new Error("VALIDATION: This payout belongs to the payout queue; mark it failed there.");
     const alreadyReversed = await tx.settlementLedger.findFirst({
-      where: { sellerOrgId, entryType: SettlementEntryType.ADJUSTMENT, referenceId: `REV_${payoutReferenceId}` },
+      where: { sellerOrgId, entryType: SettlementEntryType.ADJUSTMENT, referenceId: `${PAYOUT_REVERSAL_PREFIX}${payoutReferenceId}` },
       select: { id: true },
     });
     if (alreadyReversed) throw new Error("VALIDATION: This payout has already been marked as failed.");
 
+    const restoredAmount = Math.abs(payoutEntry.amountMinor);
+    const balances = await getSellerBalances(sellerOrgId, tx);
     const adjustmentLedger = await tx.settlementLedger.create({
       data: {
         sellerOrgId,
         entryType: SettlementEntryType.ADJUSTMENT,
         amountMinor: restoredAmount,
-        balanceAfterMinor: restoredAmount,
+        balanceAfterMinor: balances.ledgerBalanceMinor + restoredAmount,
         status: SettlementStatus.ELIGIBLE,
         description: `Compensating adjustment for bounced/failed payout ${payoutReferenceId}: ${failureReason}`,
-        referenceId: `REV_${payoutReferenceId}`,
+        referenceId: `${PAYOUT_REVERSAL_PREFIX}${payoutReferenceId}`,
         actorUserId,
         eligibleAt: new Date(),
       },
@@ -529,12 +598,7 @@ export async function recordFailedPayoutAdjustment(input: {
         entityType: "SettlementLedger",
         entityId: adjustmentLedger.id,
         action: "PAYOUT_REVERSAL_ADJUSTMENT",
-        detailsJson: JSON.stringify({
-          sellerOrgId,
-          payoutReferenceId,
-          restoredAmountMinor: restoredAmount,
-          failureReason,
-        }),
+        detailsJson: JSON.stringify({ sellerOrgId, payoutReferenceId, restoredAmountMinor: restoredAmount, failureReason }),
       },
     });
 
@@ -542,19 +606,46 @@ export async function recordFailedPayoutAdjustment(input: {
   });
 }
 
+/* ------------------------------------------------------------------ */
+/* Seller statement                                                    */
+/* ------------------------------------------------------------------ */
+
+/** Payout as shown to the seller: no internal notes, operator names or rejected requests. */
+export interface SellerPayoutHistoryRow {
+  id: string;
+  amountMinor: number;
+  status: "PROCESSING" | "PAID" | "FAILED";
+  requestedAt: Date;
+  paidAt: Date | null;
+  reference: string | null;
+  bankIbanLast4: string | null;
+}
+
 /**
- * Generates a full commission and settlement ledger statement for a seller organization.
+ * Commission and settlement statement for a seller organization (seller portal). Balance figures
+ * come from getSellerBalances, the same function the admin payout views and payout writes use.
+ * The bank account is masked; the full IBAN is never part of the statement.
  */
 export async function getSellerSettlementStatement(sellerOrgId: string) {
   const sellerOrg = await prisma.sellerOrg.findUnique({
     where: { id: sellerOrgId },
+    select: {
+      id: true,
+      name: true,
+      legalName: true,
+      commissionRatePercent: true,
+      bankName: true,
+      bankAccountTitle: true,
+      bankIban: true,
+      bankDetailsChangedAt: true,
+    },
   });
 
   if (!sellerOrg) {
     throw new Error("Seller organization not found.");
   }
 
-  const [orders, dbLedgerEntries] = await Promise.all([
+  const [orders, dbLedgerEntries, balances, payoutRequests, ledgerPayouts] = await Promise.all([
     prisma.sellerOrder.findMany({
       where: { sellerOrgId },
       orderBy: { createdAt: "desc" },
@@ -572,6 +663,33 @@ export async function getSellerSettlementStatement(sellerOrgId: string) {
     prisma.settlementLedger.findMany({
       where: { sellerOrgId },
       orderBy: { createdAt: "desc" },
+      take: 200,
+      select: {
+        id: true,
+        sellerOrderId: true,
+        entryType: true,
+        amountMinor: true,
+        status: true,
+        description: true,
+        referenceId: true,
+        holdReason: true,
+        eligibleAt: true,
+        settledAt: true,
+        createdAt: true,
+      },
+    }),
+    getSellerBalances(sellerOrgId),
+    prisma.payoutRequest.findMany({
+      where: { sellerOrgId, status: { not: PayoutRequestStatus.REJECTED } },
+      orderBy: { requestedAt: "desc" },
+      take: 50,
+      select: { id: true, amountMinor: true, status: true, requestedAt: true, decidedAt: true, bankReference: true, bankIbanLast4: true, ledgerEntryId: true },
+    }),
+    prisma.settlementLedger.findMany({
+      where: { sellerOrgId, entryType: SettlementEntryType.MANUAL_PAYOUT },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      select: { id: true, amountMinor: true, referenceId: true, settledAt: true, createdAt: true },
     }),
   ]);
 
@@ -617,28 +735,41 @@ export async function getSellerSettlementStatement(sellerOrgId: string) {
     };
   });
 
-  // Calculate ledger financial metrics
-  let eligibleForPayoutMinor = 0;
-  let inEscrowHoldMinor = 0;
-  let heldDisputeMinor = 0;
-  let settledPaidMinor = 0;
-
-  for (const entry of dbLedgerEntries) {
-    if (entry.status === SettlementStatus.ELIGIBLE) {
-      eligibleForPayoutMinor += entry.amountMinor;
-    } else if (entry.status === SettlementStatus.IN_ESCROW) {
-      inEscrowHoldMinor += entry.amountMinor;
-    } else if (entry.status === SettlementStatus.HELD) {
-      heldDisputeMinor += entry.amountMinor;
-    } else if (entry.entryType === SettlementEntryType.MANUAL_PAYOUT && entry.status === SettlementStatus.SETTLED) {
-      settledPaidMinor += Math.abs(entry.amountMinor);
-    }
-  }
-
-  // Fallback to order-level calculations if DB entries not yet materialized
-  if (dbLedgerEntries.length === 0) {
-    inEscrowHoldMinor = totalNetPayableMinor;
-  }
+  // Payout history: queue payouts plus legacy direct payouts that have no request
+  const linkedLedgerIds = new Set(payoutRequests.map((r) => r.ledgerEntryId).filter((v): v is string => Boolean(v)));
+  const legacyOnly = ledgerPayouts.filter((p) => !linkedLedgerIds.has(p.id));
+  const legacyRefs = legacyOnly.map((p) => p.referenceId).filter((v): v is string => Boolean(v));
+  const legacyReversals = legacyRefs.length
+    ? await prisma.settlementLedger.findMany({
+        where: {
+          sellerOrgId,
+          entryType: SettlementEntryType.ADJUSTMENT,
+          referenceId: { in: legacyRefs.map((r) => `${PAYOUT_REVERSAL_PREFIX}${r}`) },
+        },
+        select: { referenceId: true },
+      })
+    : [];
+  const reversedLegacy = new Set(legacyReversals.map((r) => (r.referenceId ?? "").slice(PAYOUT_REVERSAL_PREFIX.length)));
+  const payouts: SellerPayoutHistoryRow[] = [
+    ...payoutRequests.map((r): SellerPayoutHistoryRow => ({
+      id: r.id,
+      amountMinor: r.amountMinor,
+      status: r.status === PayoutRequestStatus.APPROVED_PAID ? "PAID" : r.status === PayoutRequestStatus.FAILED ? "FAILED" : "PROCESSING",
+      requestedAt: r.requestedAt,
+      paidAt: r.status === PayoutRequestStatus.REQUESTED ? null : r.decidedAt,
+      reference: r.status === PayoutRequestStatus.REQUESTED ? null : r.bankReference,
+      bankIbanLast4: r.bankIbanLast4,
+    })),
+    ...legacyOnly.map((p): SellerPayoutHistoryRow => ({
+      id: p.id,
+      amountMinor: Math.abs(p.amountMinor),
+      status: p.referenceId && reversedLegacy.has(p.referenceId) ? "FAILED" : "PAID",
+      requestedAt: p.createdAt,
+      paidAt: p.settledAt ?? p.createdAt,
+      reference: p.referenceId,
+      bankIbanLast4: null,
+    })),
+  ].sort((a, b) => b.requestedAt.getTime() - a.requestedAt.getTime());
 
   return {
     sellerOrg: {
@@ -648,21 +779,29 @@ export async function getSellerSettlementStatement(sellerOrgId: string) {
       commissionRatePercent: sellerOrg.commissionRatePercent,
       bankName: sellerOrg.bankName,
       bankAccountTitle: sellerOrg.bankAccountTitle,
-      bankIban: sellerOrg.bankIban,
+      bankIban: maskStoredIban(sellerOrg.bankIban),
+      bankIbanLast4: storedIbanLast4(sellerOrg.bankIban),
+      bankDetailsChangedAt: sellerOrg.bankDetailsChangedAt,
+      payoutHoldUntil: payoutHoldUntil(sellerOrg.bankDetailsChangedAt),
+      payoutHoldHours: BANK_CHANGE_PAYOUT_HOLD_HOURS,
     },
+    balances,
     summary: {
       totalGrossGmvMinor,
       totalPlatformCommissionMinor,
       totalShippingMinor,
       totalNetPayableMinor,
-      settledPaidMinor,
-      pendingEscrowMinor: inEscrowHoldMinor,
-      eligibleForPayoutMinor,
-      heldDisputeMinor,
-      availablePayoutBalanceMinor: Math.max(0, eligibleForPayoutMinor),
+      /** Net transferred: confirmed payouts minus bounced ones. */
+      settledPaidMinor: balances.paidOutMinor - balances.reversedPayoutsMinor,
+      pendingEscrowMinor: balances.pendingMinor + balances.inEscrowMinor,
+      /** Same figure finance can request a payout for (available = ledger balance − reserved). */
+      eligibleForPayoutMinor: balances.availableMinor,
+      heldDisputeMinor: balances.heldMinor,
+      availablePayoutBalanceMinor: Math.max(0, balances.availableMinor),
       orderCount: orders.length,
     },
     ledgers: orderLedgers,
     ledgerEntries: dbLedgerEntries,
+    payouts,
   };
 }

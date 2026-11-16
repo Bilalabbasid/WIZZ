@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { SITE_CONFIG } from "@/lib/config";
+import { clearSessionCookie } from "@/lib/auth";
+import { clearMfaPendingCookie } from "../_lib/login";
 
 /**
  * Sign out. POST only: a GET handler would let any link, image or prefetch on
@@ -9,7 +9,8 @@ import { SITE_CONFIG } from "@/lib/config";
  * `redirect: "manual"` and navigate themselves.
  */
 export async function POST(req: NextRequest) {
-  const cookieStore = await cookies();
-  cookieStore.delete(SITE_CONFIG.sessionCookieName);
-  return NextResponse.redirect(new URL("/login", req.url), 303);
+  const res = NextResponse.redirect(new URL("/login", req.url), 303);
+  clearSessionCookie(res);
+  clearMfaPendingCookie(res);
+  return res;
 }

@@ -16,6 +16,8 @@ const NAV: Array<AdminNavItem & { section: AdminSection }> = [
   { href: "/admin/orders", label: "Orders & Fulfillment", section: "orders" },
   { href: "/admin/returns", label: "Returns & Disputes", section: "returns" },
   { href: "/admin/refunds", label: "Refunds", section: "refunds" },
+  { href: "/admin/payouts", label: "Seller Payouts", section: "refunds" },
+  { href: "/admin/risk", label: "Risk Review", section: "orders" },
   { href: "/admin/customers", label: "Customers", section: "customers" },
   { href: "/admin/sellers", label: "Sellers", section: "sellers" },
   { href: "/admin/applications", label: "Seller Applications", section: "applications" },

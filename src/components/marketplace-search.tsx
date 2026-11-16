@@ -127,12 +127,31 @@ export function MarketplaceSearch({
         action="/search"
         method="GET"
         onSubmit={handleSubmit}
-        className="flex items-center w-full h-11 rounded-full border border-line bg-white pl-4 pr-1 transition-colors hover:border-mute-2 focus-within:border-ink"
+        className="flex items-center w-full h-11 rounded-full border-[1.5px] border-ink bg-white pl-1.5 pr-1 transition-shadow focus-within:shadow-[0_0_0_3px_rgba(14,14,13,0.08)]"
       >
+        {showCategorySelect && categories.length > 0 && (
+          <div className="hidden lg:flex items-center relative h-8 flex-shrink-0 mr-1">
+            <select
+              name="category"
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="appearance-none h-full max-w-[150px] truncate rounded-full bg-canvas border border-line pl-3 pr-7 text-[12px] font-medium text-ink cursor-pointer hover:border-mute-2 focus:outline-none focus-visible:border-ink"
+              aria-label="Search in category"
+            >
+              <option value="">All categories</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.slug}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            <ChevronDown size={13} className="absolute right-2.5 text-mute pointer-events-none" aria-hidden="true" />
+          </div>
+        )}
+
         <label htmlFor={inputId} className="sr-only">
           Search products and brands
         </label>
-        <Search size={17} strokeWidth={1.7} className="text-ink flex-shrink-0" aria-hidden="true" />
         <input
           ref={inputRef}
           id={inputId}
@@ -144,8 +163,8 @@ export function MarketplaceSearch({
             setIsOpen(true);
           }}
           onFocus={() => setIsOpen(true)}
-          placeholder="Search products and brands"
-          className="flex-1 min-w-0 h-full bg-transparent pl-2.5 pr-1 text-[15px] text-ink placeholder:text-mute focus:outline-none [&::-webkit-search-cancel-button]:hidden"
+          placeholder="Search headphones, watches, kitchen…"
+          className="flex-1 min-w-0 h-full bg-transparent pl-3 pr-1 text-[14px] text-ink placeholder:text-mute focus:outline-none [&::-webkit-search-cancel-button]:hidden"
           autoComplete="off"
           aria-autocomplete="list"
           aria-controls={popoverVisible ? popoverId : undefined}
@@ -164,31 +183,12 @@ export function MarketplaceSearch({
           </button>
         )}
 
-        {showCategorySelect && categories.length > 0 && (
-          <div className="hidden xl:flex items-center relative h-7 border-l border-line pl-1 flex-shrink-0">
-            <select
-              name="category"
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-              className="appearance-none bg-transparent h-full max-w-[140px] truncate pl-2 pr-6 text-[13px] text-mute hover:text-ink cursor-pointer focus:outline-none focus-visible:text-ink"
-              aria-label="Search in category"
-            >
-              <option value="">All categories</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.slug}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-            <ChevronDown size={13} className="absolute right-1.5 text-mute pointer-events-none" aria-hidden="true" />
-          </div>
-        )}
-
         <button
           type="submit"
-          className="ml-1 h-9 px-4 rounded-full bg-ink text-white text-[13px] font-medium hover:bg-ink-2 transition-colors flex-shrink-0"
+          aria-label="Search"
+          className="ml-1 size-9 rounded-full bg-ink text-white flex items-center justify-center hover:bg-ink-2 transition-colors flex-shrink-0"
         >
-          Search
+          <Search size={16} strokeWidth={2} aria-hidden="true" />
         </button>
       </form>
 

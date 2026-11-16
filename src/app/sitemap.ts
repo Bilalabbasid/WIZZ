@@ -2,11 +2,11 @@ import type { MetadataRoute } from "next";
 import { prisma } from "@/lib/db";
 import { SITE_CONFIG } from "@/lib/config";
 import { publicProductWhere } from "@/modules/catalog/services";
-import { connection } from "next/server";
+
+// Built per request (never at `next build`, which must not need the database)
+export const dynamic = "force-dynamic";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  // Render per request: never query the database while `next build` prerenders
-  await connection();
   const baseUrl = SITE_CONFIG.canonicalUrl;
 
   // 1. Static Core Landing & Legal Policy Pages

@@ -7,7 +7,8 @@
  *   - a platform admin from ADMIN_EMAIL / ADMIN_PASSWORD (created once; never reset
  *     unless ADMIN_RESET_PASSWORD=true)
  * It never creates demo customers or demo passwords and never overwrites edits made
- * in the admin panel.
+ * in the admin panel. It also encrypts legacy plaintext bank account numbers and installs
+ * the financial immutability guards (src/modules/finance/db-guards.ts).
  *
  * Optional: SEED_DEMO_CATALOG=true also loads the 52-product demo catalog. That
  * script ARCHIVES published products that are not in the demo list, so use it only
@@ -19,6 +20,7 @@ import { prisma } from "../src/lib/db";
 import { SITE_CONFIG } from "../src/lib/config";
 import { SellerOperationalStatus, SellerMembershipRole, UserRole } from "@prisma/client";
 import { EXPANSION_CATEGORIES } from "./catalog-expansion";
+import { runFinancialDataProtection } from "../src/modules/finance/db-guards";
 
 const BASE_CATEGORIES = [
   { name: "Electronics & Audio", slug: "electronics-audio", description: "Headphones, speakers, chargers and everyday tech.", displayOrder: 1 },
@@ -94,7 +96,13 @@ async function main() {
     console.log("[bootstrap] ADMIN_EMAIL/ADMIN_PASSWORD not set; no admin created");
   }
 
-  // 4. Optional demo catalog
+  // 4. Financial data protection (idempotent; each step logs and continues on failure):
+  //    encrypt legacy plaintext IBANs (needs DATA_ENCRYPTION_KEY), mask IBANs in legacy audit
+  //    details, then install the ledger / audit / refund immutability triggers and the
+  //    one-payout-per-bank-reference index. Never logs account numbers.
+  await runFinancialDataProtection(prisma, (m) => console.log(`[bootstrap] ${m}`));
+
+  // 5. Optional demo catalog
   if (process.env.SEED_DEMO_CATALOG === "true") {
     console.log("[bootstrap] SEED_DEMO_CATALOG=true: loading the demo catalog...");
     await prisma.$disconnect();

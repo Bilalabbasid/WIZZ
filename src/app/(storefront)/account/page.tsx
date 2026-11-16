@@ -9,7 +9,8 @@ import { AccountPasswordForm } from "@/components/account-password-form";
 import { AccountSignOutButton } from "@/components/account-sign-out-button";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { Package, ChevronRight, ChevronLeft, Heart } from "lucide-react";
+import { Package, ChevronRight, ChevronLeft, Heart, ShieldCheck } from "lucide-react";
+import { AccountSecurityVerifyEmail } from "@/components/account-security-verify-email";
 import { connection } from "next/server";
 
 export const metadata: Metadata = {
@@ -115,9 +116,18 @@ export default async function AccountPage({
               </span>
             )}
           </Link>
+          <Link
+            href="/account/security"
+            className="inline-flex min-h-[44px] items-center gap-2 rounded-lg border border-line bg-white px-4 text-sm font-medium text-ink-2 hover:bg-canvas focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
+          >
+            <ShieldCheck size={15} className="text-brand-600" aria-hidden="true" />
+            <span>Security</span>
+          </Link>
           <AccountSignOutButton />
         </div>
       </div>
+
+      {!user.isEmailVerified && <AccountSecurityVerifyEmail email={user.email} />}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left Column: Order History (2 cols) */}

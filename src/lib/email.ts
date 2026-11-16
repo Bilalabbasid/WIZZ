@@ -140,3 +140,69 @@ ${extra?.trackingUrl ? `<p><a href="${escapeHtml(extra.trackingUrl)}">Track on t
     ),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Account emails (password reset, email verification)
+// ---------------------------------------------------------------------------
+
+/** Absolute link on the canonical site (APP_URL), e.g. appLink("/reset-password", { token }). */
+export function appLink(path: string, params?: Record<string, string>): string {
+  const url = new URL(path, SITE_CONFIG.canonicalUrl.replace(/\/$/, "") + "/");
+  for (const [k, v] of Object.entries(params ?? {})) url.searchParams.set(k, v);
+  return url.toString();
+}
+
+function buttonHtml(link: string, label: string): string {
+  return `<p><a href="${escapeHtml(link)}" style="display:inline-block;background:#3a47e0;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:700">${escapeHtml(label)}</a></p>`;
+}
+
+export function buildPasswordResetEmail(input: { to: string; firstName: string; link: string; expiresMinutes: number }): OutgoingEmail {
+  const intro = `Hi ${input.firstName}, we received a request to reset the password for your ${SITE_CONFIG.brandName} account.`;
+  const outro = `This link works once and expires in ${input.expiresMinutes} minutes. If you didn't ask for this, you can ignore this email; your password stays the same.`;
+  return {
+    to: input.to,
+    subject: `Reset your ${SITE_CONFIG.brandName} password`,
+    text: `${intro}\n\nChoose a new password: ${input.link}\n\n${outro}`,
+    html: layout(
+      "Reset your password",
+      `<p style="font-size:14px">${escapeHtml(intro)}</p>${buttonHtml(input.link, "Choose a new password")}<p style="font-size:13px;color:#475569">${escapeHtml(outro)}</p>`
+    ),
+  };
+}
+
+export function buildEmailVerificationEmail(input: { to: string; firstName: string; link: string; expiresHours: number }): OutgoingEmail {
+  const intro = `Hi ${input.firstName}, please confirm this is your email address for your ${SITE_CONFIG.brandName} account.`;
+  const outro = `The link expires in ${input.expiresHours} hours. If you didn't create an account, you can ignore this email.`;
+  return {
+    to: input.to,
+    subject: `Confirm your email for ${SITE_CONFIG.brandName}`,
+    text: `${intro}\n\nConfirm your email: ${input.link}\n\n${outro}`,
+    html: layout(
+      "Confirm your email",
+      `<p style="font-size:14px">${escapeHtml(intro)}</p>${buttonHtml(input.link, "Confirm email")}<p style="font-size:13px;color:#475569">${escapeHtml(outro)}</p>`
+    ),
+  };
+}
+
+/**
+ * Sends an account email without throwing. When SMTP isn't configured it logs a server
+ * warning (production) or the message text including the link (development only) and
+ * returns false, so callers can still give their generic response.
+ */
+export async function sendAccountEmail(message: OutgoingEmail): Promise<boolean> {
+  if (!isEmailConfigured()) {
+    if (process.env.NODE_ENV === "production") {
+      console.warn(`[email] SMTP is not configured; could not send "${message.subject}". Set SMTP_HOST and SMTP_FROM.`);
+    } else {
+      console.log(`[email:dev] to=${message.to} subject="${message.subject}"\n${message.text}`);
+    }
+    return false;
+  }
+  try {
+    await sendEmail(message);
+    return true;
+  } catch (err) {
+    console.error(`[email] sending "${message.subject}" failed:`, err instanceof Error ? err.message : err);
+    return false;
+  }
+}

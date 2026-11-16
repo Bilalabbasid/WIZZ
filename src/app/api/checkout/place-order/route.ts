@@ -8,9 +8,22 @@ import { placeOrderSchema, formatZodError } from "@/lib/validation";
 import { orderPath } from "@/lib/order-access";
 import { assertCartAccess } from "@/modules/cart/services";
 import { placeOrder } from "@/modules/checkout/services";
-import { executeOrderPayment } from "@/modules/payments/services";
+import { executeOrderPayment, getOrderPaymentMethod } from "@/modules/payments/services";
+import { RiskBlockedError } from "@/modules/risk/services";
 
 export const dynamic = "force-dynamic";
+
+/** Business errors this route knows better than the generic mapper. */
+function checkoutError(err: unknown) {
+  if (err instanceof RiskBlockedError) {
+    return NextResponse.json({ error: err.publicMessage, code: err.event.rule }, { status: err.httpStatus });
+  }
+  const message = err instanceof Error ? err.message : "";
+  if (message.startsWith("PRICE_CHANGED:")) {
+    return NextResponse.json({ error: message.replace(/^PRICE_CHANGED:\s*/, ""), code: "PRICE_CHANGED" }, { status: 409 });
+  }
+  return apiError(err, "We could not place your order. Please try again.");
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -30,6 +43,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "cartId is required" }, { status: 400 });
     }
 
+    // The schema whitelists fields: any amount/price/discount/total in the body is dropped here.
     const parsed = placeOrderSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json({ error: formatZodError(parsed.error), code: "VALIDATION" }, { status: 400 });
@@ -51,27 +65,32 @@ export async function POST(req: NextRequest) {
       couponCode: input.couponCode,
       idempotencyKey: input.idempotencyKey,
       paymentMethod: input.paymentMethod,
+      risk: { ipAddress: ip },
     });
 
-    // COD stays UNPAID until the courier remits the cash. The sandbox adapter (non-production only)
-    // goes through the same verified markOrderPaid() path as webhooks.
+    // The payment method comes from the order itself, not the request: a retried request with
+    // the same key but a different method can never "pay" a cash-on-delivery order.
+    const paymentMethod = await getOrderPaymentMethod(order.id);
+
+    // COD stays UNPAID until the courier remits the cash. The sandbox adapter (non-production only,
+    // enforced inside executeOrderPayment) goes through the same verified path as webhooks.
     let payment: Record<string, unknown> = {
       success: true,
       message: "Cash on delivery confirmed. Payment is due on delivery.",
     };
-    if (input.paymentMethod === "ONLINE_SANDBOX") {
-      payment = await executeOrderPayment(order.id, input.idempotencyKey);
+    if (paymentMethod === "ONLINE_SANDBOX") {
+      payment = await executeOrderPayment(order.id, input.idempotencyKey, { userId: user?.id ?? null });
     }
 
     return NextResponse.json({
       success: true,
       orderId: order.id,
       orderNumber: order.orderNumber,
-      paymentMethod: input.paymentMethod,
+      paymentMethod,
       payment,
       redirectTo: orderPath(order.id, { guest: !user }),
     });
   } catch (err: unknown) {
-    return apiError(err, "We could not place your order. Please try again.");
+    return checkoutError(err);
   }
 }

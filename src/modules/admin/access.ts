@@ -61,6 +61,8 @@ export function hasAnyRole(role: UserRole, roles: UserRole[]): boolean {
  *
  * - Not signed in → /login?next=<path>
  * - Customer (non-platform) account → 404 (the admin console is not advertised to customers)
+ * - Staff session without two-factor → /account/security?setup=1 (not enrolled) or
+ *   /login?next=<path>&mfa=1 (enrolled, but this session skipped the code)
  * - Platform staff without this section's role → back to the dashboard with a notice
  */
 export async function requireAdminPage(section: AdminSection, nextPath: string) {
@@ -70,6 +72,13 @@ export async function requireAdminPage(section: AdminSection, nextPath: string) 
   }
   if (!ALL_ADMIN_ROLES.includes(user.role)) {
     notFound();
+  }
+  // Staff must use a two-factor session: enrol first, or sign in again with the code.
+  if (!user.sessionMfa) {
+    if (!user.mfaEnabled) {
+      redirect("/account/security?setup=1");
+    }
+    redirect(`/login?next=${encodeURIComponent(nextPath)}&mfa=1`);
   }
   if (!canAccessSection(user.role, section)) {
     redirect(`/admin?denied=${encodeURIComponent(section)}`);

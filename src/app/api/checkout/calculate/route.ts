@@ -26,10 +26,12 @@ export async function POST(req: NextRequest) {
     const user = await getCurrentUser();
     await assertCartAccess(cartId, { userId: user?.id, guestToken: await getCartToken() });
 
+    // Signed-in shoppers learn here (not only at placement) that a coupon was already used by them.
     const totals = await calculateCheckoutTotals(
       cartId,
       typeof couponCode === "string" ? couponCode : undefined,
-      shippingTier
+      shippingTier,
+      user ? { userId: user.id, email: user.email, phone: user.phone } : undefined
     );
     // Shoppers see prices only: commission, seller payouts and internal reconciliation stay server-side
     const { sellerPackages, reconciliation: _reconciliation, ...publicTotals } = totals;

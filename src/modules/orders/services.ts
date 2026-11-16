@@ -152,12 +152,27 @@ async function cancelSuborderInTx(
   });
 
   const isPaid = sellerOrder.customerOrder.paymentStatus === PaymentStatus.PAID;
-  if (isPaid && sellerOrder.totalMinor > 0) {
+  // Never refund more than was paid: earlier refunds for this package, and order-level refunds
+  // or chargebacks, count against it.
+  let refundableMinor = 0;
+  if (isPaid) {
+    const prior = await tx.refund.findMany({
+      where: { customerOrderId: sellerOrder.customerOrderId, status: { not: RefundStatus.FAILED } },
+      select: { amountMinor: true, sellerOrderId: true },
+    });
+    const packageRefunded = prior.filter((r) => r.sellerOrderId === sellerOrder.id).reduce((s, r) => s + r.amountMinor, 0);
+    const orderRefunded = prior.reduce((s, r) => s + r.amountMinor, 0);
+    refundableMinor = Math.max(
+      0,
+      Math.min(sellerOrder.totalMinor - packageRefunded, sellerOrder.customerOrder.totalMinor - orderRefunded)
+    );
+  }
+  if (isPaid && refundableMinor > 0) {
     await tx.refund.create({
       data: {
         customerOrderId: sellerOrder.customerOrderId,
         sellerOrderId: sellerOrder.id,
-        amountMinor: sellerOrder.totalMinor,
+        amountMinor: refundableMinor,
         currency: sellerOrder.customerOrder.currency,
         status: RefundStatus.PENDING,
         reason: `Package ${sellerOrder.sellerOrderNumber} cancelled: ${reason}`,
@@ -175,7 +190,7 @@ async function cancelSuborderInTx(
         customerOrderId: sellerOrder.customerOrderId,
         sellerOrderNumber: sellerOrder.sellerOrderNumber,
         fromStatus: sellerOrder.status,
-        pendingRefundMinor: isPaid ? sellerOrder.totalMinor : 0,
+        pendingRefundMinor: refundableMinor,
         reason,
       }),
     },

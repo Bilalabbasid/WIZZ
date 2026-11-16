@@ -20,6 +20,7 @@ import {
 import { SITE_CONFIG } from "@/lib/config";
 import { deliveredAtOf, lineRefundMinor, notifySellerMembers } from "@/modules/orders/lifecycle";
 import { getCommerceSettings } from "@/lib/commerce-settings";
+import { assertRefundWithinPaid } from "@/modules/payments/services";
 
 export const RETURN_REASON_CODES = ["DEFECTIVE", "NOT_AS_DESCRIBED", "WRONG_ITEM", "UNWANTED"] as const;
 export type ReturnReasonCode = (typeof RETURN_REASON_CODES)[number];
@@ -225,6 +226,13 @@ export async function transitionReturnRequest(returnRequestId: string, action: R
         commissionReversedMinor += commission;
         sellerDebitMinor += lineRefund - commission;
       }
+
+      // Never refund more than the customer actually paid (and nothing on an unpaid COD order)
+      await assertRefundWithinPaid(tx, {
+        customerOrderId: returnReq.sellerOrder.customerOrderId,
+        sellerOrderId: returnReq.sellerOrderId,
+        amountMinor: refundAmountMinor,
+      });
 
       await tx.refund.create({
         data: {

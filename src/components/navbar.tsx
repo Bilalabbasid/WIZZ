@@ -1,6 +1,9 @@
 import { cache } from "react";
 import Link from "next/link";
-import { Heart, ShoppingBag, User as UserIcon } from "lucide-react";
+import { Heart, Plus, ShoppingBag, User as UserIcon } from "lucide-react";
+import { cookies } from "next/headers";
+import { CITY_COOKIE, normalizeCity } from "@/lib/location";
+import { CityPicker } from "./city-picker";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getCategories } from "@/modules/catalog/services";
@@ -28,10 +31,9 @@ export const getHeaderCartCount = cache(async (): Promise<number> => {
   return cart?.items.reduce((sum, item) => sum + item.quantity, 0) ?? 0;
 });
 
-const navLinkClass =
-  "inline-flex items-center min-h-[44px] px-1 text-sm font-medium text-mute hover:text-ink transition-colors whitespace-nowrap";
+const stripLinkClass = "hover:text-white transition-colors";
 const roundButtonClass =
-  "size-11 rounded-full border border-line bg-white text-ink flex items-center justify-center hover:border-ink transition-colors flex-shrink-0";
+  "relative size-11 rounded-full text-ink flex items-center justify-center hover:bg-white transition-colors flex-shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
 
 export async function Navbar() {
   // Render per request: never query the database while `next build` prerenders
@@ -67,98 +69,103 @@ export async function Navbar() {
   const cartLabel = `Cart, ${cartItemCount} item${cartItemCount === 1 ? "" : "s"}`;
   const countText = cartItemCount > 99 ? "99+" : String(cartItemCount);
 
-  return (
-    <header className="sticky top-0 z-50 bg-canvas border-b border-line">
-      <div className="mx-auto max-w-[1360px] px-5 md:px-10">
-        <div className="flex items-center gap-3 md:gap-5 lg:gap-8 py-3 md:py-4">
-          {/* Left: menu (small screens) + logo */}
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <MobileNav
-              categories={drawerCategories}
-              user={user ? { id: user.id, firstName: user.firstName, role: user.role } : null}
-              sellerWorkspaceLink={sellerWorkspaceLink}
-              isPlatformAdmin={isPlatformAdmin}
-            />
-            <WizzLogo size="md" />
-          </div>
+  const sellHref = sellerWorkspaceLink ?? "/sell";
+  const shopperCity = normalizeCity((await cookies()).get(CITY_COOKIE)?.value);
 
-          {/* Primary navigation (desktop) */}
-          <nav aria-label="Main" className="hidden lg:flex items-center gap-6 flex-shrink-0">
-            <Link href="/products" className={`${navLinkClass} text-ink`}>
-              Shop all
+  return (
+    <header className="sticky top-0 z-50">
+      {/* Utility strip */}
+      <div className="hidden sm:block bg-ink text-white/70 text-[11px]">
+        <div className="mx-auto max-w-[1360px] px-5 md:px-10 h-8 flex items-center justify-between gap-4">
+          <CityPicker city={shopperCity} />
+          <nav aria-label="Help" className="flex items-center gap-5 flex-shrink-0">
+            <span className="hidden md:inline">Cash on delivery across Pakistan</span>
+            <Link href="/account" className={stripLinkClass}>
+              Track order
             </Link>
-            <MegaMenu categories={allCategories} />
-            <Link href="/products?deals=true" className={navLinkClass}>
-              Deals
+            <Link href="/contact" className={stripLinkClass}>
+              Help
             </Link>
-            {sellerWorkspaceLink ? (
-              <Link href={sellerWorkspaceLink} className={navLinkClass}>
+            {sellerWorkspaceLink && (
+              <Link href={sellerWorkspaceLink} className={stripLinkClass}>
                 Seller Center
-              </Link>
-            ) : (
-              <Link href="/sell" className={navLinkClass}>
-                Sell on WIZZ.PK
               </Link>
             )}
           </nav>
+        </div>
+      </div>
 
-          {/* Search pill (tablet and up; phones get their own row below) */}
-          <div className="hidden md:block flex-1 min-w-0 lg:max-w-[460px] lg:ml-auto">
-            <MarketplaceSearch categories={searchCategories} />
-          </div>
-
-          {/* Right: saved, account, cart */}
-          <div className="flex items-center gap-2 ml-auto md:ml-0 flex-shrink-0">
-            <Link
-              href="/wishlist"
-              aria-label="Saved items"
-              className={`${roundButtonClass} hidden md:flex`}
-            >
-              <Heart size={18} strokeWidth={1.6} aria-hidden="true" />
-            </Link>
-
-            <div className="hidden md:block">
-              {user ? (
-                <AccountMenu
-                  firstName={user.firstName}
-                  sellerWorkspaceLink={sellerWorkspaceLink}
-                  isPlatformAdmin={isPlatformAdmin}
-                />
-              ) : (
-                <Link href="/login" aria-label="Sign in or create an account" className={roundButtonClass}>
-                  <UserIcon size={18} strokeWidth={1.6} aria-hidden="true" />
-                </Link>
-              )}
+      <div className="bg-canvas border-b border-line">
+        <div className="mx-auto max-w-[1360px] px-5 md:px-10">
+          <div className="flex items-center gap-3 md:gap-4 lg:gap-6 py-3">
+            {/* Left: menu (small screens) + logo + categories */}
+            <div className="flex items-center gap-2 lg:gap-5 flex-shrink-0">
+              <MobileNav
+                categories={drawerCategories}
+                user={user ? { id: user.id, firstName: user.firstName, role: user.role } : null}
+                sellerWorkspaceLink={sellerWorkspaceLink}
+                isPlatformAdmin={isPlatformAdmin}
+              />
+              <WizzLogo size="md" />
+              <nav aria-label="Main" className="hidden xl:flex items-center">
+                <MegaMenu categories={allCategories} />
+              </nav>
             </div>
 
-            {/* Cart: ink pill on tablet/desktop, round icon on phones */}
-            <Link
-              href="/cart"
-              aria-label={cartLabel}
-              className="relative flex items-center justify-center gap-2 h-11 min-w-11 rounded-full bg-ink text-white px-3 md:px-5 text-sm font-medium hover:bg-ink-2 transition-colors flex-shrink-0"
-            >
-              <ShoppingBag size={17} strokeWidth={1.8} aria-hidden="true" />
-              <span className="hidden md:inline" aria-hidden="true">
-                Cart
-              </span>
-              <span
-                aria-hidden="true"
-                className={`min-w-[22px] h-[22px] px-1.5 rounded-full bg-volt text-ink font-mono text-[11px] leading-none flex items-center justify-center tabular-nums ${
-                  cartItemCount > 0 ? "" : "hidden"
-                }`}
-              >
-                {countText}
-              </span>
-            </Link>
-            {/* Announce cart changes (after add to cart the header re-renders) */}
-            <span className="sr-only" aria-live="polite" aria-atomic="true">
-              {cartLabel}
-            </span>
-          </div>
-        </div>
+            {/* Search pill (tablet and up; phones get their own row below) */}
+            <div className="hidden md:block flex-1 min-w-0">
+              <MarketplaceSearch categories={searchCategories} />
+            </div>
 
-        {/* Phone search row (the homepage hero has its own large search) */}
-        <HeaderSearchOutsideHome categories={searchCategories} showCategorySelect={false} className="md:hidden pb-3" />
+            {/* Right: saved, cart, account, sell */}
+            <div className="flex items-center gap-1 ml-auto md:ml-0 flex-shrink-0">
+              <Link href="/wishlist" aria-label="Saved items" className={`${roundButtonClass} hidden md:flex`}>
+                <Heart size={19} strokeWidth={1.6} aria-hidden="true" />
+              </Link>
+
+              <Link href="/cart" aria-label={cartLabel} className={roundButtonClass}>
+                <ShoppingBag size={19} strokeWidth={1.6} aria-hidden="true" />
+                <span
+                  aria-hidden="true"
+                  className={`absolute top-1 right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-[#E5482E] text-white font-mono text-[10px] leading-none flex items-center justify-center tabular-nums ring-2 ring-canvas ${
+                    cartItemCount > 0 ? "" : "hidden"
+                  }`}
+                >
+                  {countText}
+                </span>
+              </Link>
+              {/* Announce cart changes (after add to cart the header re-renders) */}
+              <span className="sr-only" aria-live="polite" aria-atomic="true">
+                {cartLabel}
+              </span>
+
+              <div className="hidden md:block">
+                {user ? (
+                  <AccountMenu
+                    firstName={user.firstName}
+                    sellerWorkspaceLink={sellerWorkspaceLink}
+                    isPlatformAdmin={isPlatformAdmin}
+                  />
+                ) : (
+                  <Link href="/login" aria-label="Sign in or create an account" className={roundButtonClass}>
+                    <UserIcon size={19} strokeWidth={1.6} aria-hidden="true" />
+                  </Link>
+                )}
+              </div>
+
+              <Link
+                href={sellHref}
+                className="hidden md:inline-flex items-center gap-1.5 h-10 ml-2 px-4 rounded-full bg-volt text-ink text-sm font-semibold border-[1.5px] border-ink hover:brightness-95 transition flex-shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+              >
+                <Plus size={16} strokeWidth={2.2} aria-hidden="true" />
+                {sellerWorkspaceLink ? "Seller Center" : "Sell"}
+              </Link>
+            </div>
+          </div>
+
+          {/* Phone search row (the homepage hero has its own large search) */}
+          <HeaderSearchOutsideHome categories={searchCategories} showCategorySelect={false} className="md:hidden pb-3" />
+        </div>
       </div>
     </header>
   );

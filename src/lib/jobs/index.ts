@@ -1,7 +1,8 @@
 import { prisma } from "../db";
 import { JobStatus } from "@prisma/client";
 import { cleanupExpiredReservations } from "@/modules/inventory/services";
-import { cancelExpiredUnpaidOrders } from "@/modules/payments/services";
+import { cancelExpiredUnpaidOrders, reconcilePayments } from "@/modules/payments/services";
+import { scanRefundAbuse } from "@/modules/risk/services";
 import { buildOrderEmail, sendEmail } from "../email";
 import { syncDealPricing } from "@/modules/sellers/deal-pricing";
 
@@ -120,35 +121,80 @@ export async function processPendingJobs(limit: number = 10): Promise<{ processe
 
 let maintenanceRunning = false;
 
-/**
- * One maintenance tick: expire stale stock holds, cancel timed-out online-payment
- * orders, then deliver queued emails. Invoked by the HTTP cron endpoint and by the
- * in-process scheduler (instrumentation.ts). Re-entrancy guarded per process;
- * all operations are individually idempotent across processes.
- */
-export async function runMaintenance(): Promise<{
+export interface MaintenanceResult {
   reservationsReleased: number;
   ordersCancelled: number;
   jobsProcessed: number;
   jobErrors: number;
   dealPricesUpdated: number;
-}> {
-  if (maintenanceRunning) {
-    return { reservationsReleased: 0, ordersCancelled: 0, jobsProcessed: 0, jobErrors: 0, dealPricesUpdated: 0 };
-  }
+  paymentsReconciled: number;
+  latePaymentRefundsFlagged: number;
+  webhooksReprocessed: number;
+  reconciliationErrors: number;
+  refundAbuseFlagged: number;
+}
+
+const EMPTY_RESULT: MaintenanceResult = {
+  reservationsReleased: 0,
+  ordersCancelled: 0,
+  jobsProcessed: 0,
+  jobErrors: 0,
+  dealPricesUpdated: 0,
+  paymentsReconciled: 0,
+  latePaymentRefundsFlagged: 0,
+  webhooksReprocessed: 0,
+  reconciliationErrors: 0,
+  refundAbuseFlagged: 0,
+};
+
+/**
+ * One maintenance tick. Order matters:
+ *  1. reconcile payments (recorded captures / failed webhooks are applied BEFORE anything expires),
+ *  2. expire stale stock holds,
+ *  3. cancel timed-out online-payment orders (stock released, coupon restored),
+ *  4. deliver queued emails, apply deal price transitions, flag refund abuse.
+ * Invoked by the HTTP cron endpoint and by the in-process scheduler (instrumentation.ts).
+ * Re-entrancy guarded per process; all operations are individually idempotent across processes.
+ * One failing step never prevents the others from running.
+ */
+export async function runMaintenance(): Promise<MaintenanceResult> {
+  if (maintenanceRunning) return { ...EMPTY_RESULT };
   maintenanceRunning = true;
+  const result: MaintenanceResult = { ...EMPTY_RESULT };
+  const step = async (name: string, fn: () => Promise<void>) => {
+    try {
+      await fn();
+    } catch (err) {
+      result.reconciliationErrors += name === "reconcilePayments" ? 1 : 0;
+      console.error(`[maintenance] ${name} failed`, err instanceof Error ? err.message : err);
+    }
+  };
   try {
-    const { cleanedCount } = await cleanupExpiredReservations();
-    const { cancelled } = await cancelExpiredUnpaidOrders();
-    const jobs = await processPendingJobs(25);
-    const deals = await syncDealPricing();
-    return {
-      reservationsReleased: cleanedCount,
-      ordersCancelled: cancelled,
-      jobsProcessed: jobs.processed,
-      jobErrors: jobs.errors,
-      dealPricesUpdated: deals.updated,
-    };
+    await step("reconcilePayments", async () => {
+      const r = await reconcilePayments();
+      result.paymentsReconciled = r.capturesApplied;
+      result.latePaymentRefundsFlagged = r.refundsFlagged;
+      result.webhooksReprocessed = r.webhooksReprocessed;
+      result.reconciliationErrors += r.errors;
+    });
+    await step("cleanupExpiredReservations", async () => {
+      result.reservationsReleased = (await cleanupExpiredReservations()).cleanedCount;
+    });
+    await step("cancelExpiredUnpaidOrders", async () => {
+      result.ordersCancelled = (await cancelExpiredUnpaidOrders()).cancelled;
+    });
+    await step("processPendingJobs", async () => {
+      const jobs = await processPendingJobs(25);
+      result.jobsProcessed = jobs.processed;
+      result.jobErrors = jobs.errors;
+    });
+    await step("syncDealPricing", async () => {
+      result.dealPricesUpdated = (await syncDealPricing()).updated;
+    });
+    await step("scanRefundAbuse", async () => {
+      result.refundAbuseFlagged = (await scanRefundAbuse()).flagged;
+    });
+    return result;
   } finally {
     maintenanceRunning = false;
   }

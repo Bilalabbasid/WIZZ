@@ -4,15 +4,17 @@ import React, { useId, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { HomeProductTile, type HomeTileProduct } from "./home-product-tile";
+import { ALL_PAKISTAN, isSameCity } from "@/lib/location";
 
 export interface JustListedCategory {
   slug: string;
   name: string;
 }
 
-type SortKey = "newest" | "price_asc" | "price_desc";
+type SortKey = "nearest" | "newest" | "price_asc" | "price_desc";
 
 const SORT_OPTIONS: Array<{ value: SortKey; label: string }> = [
+  { value: "nearest", label: "Nearest first" },
   { value: "newest", label: "Newest" },
   { value: "price_asc", label: "Price: low to high" },
   { value: "price_desc", label: "Price: high to low" },
@@ -28,19 +30,29 @@ const PAGE_SIZE = 18;
 export function HomeJustListed({
   products,
   categories,
+  nearCity = ALL_PAKISTAN,
 }: {
   products: HomeTileProduct[];
   categories: JustListedCategory[];
+  /** Shopper's city: listings from sellers in this city come first under "Nearest first". */
+  nearCity?: string;
 }) {
   const [category, setCategory] = useState<string>(ALL);
-  const [sort, setSort] = useState<SortKey>("newest");
+  const hasCity = nearCity !== ALL_PAKISTAN;
+  const [sort, setSort] = useState<SortKey>(hasCity ? "nearest" : "newest");
   const [shown, setShown] = useState(PAGE_SIZE);
   const sortId = useId();
   const headingId = useId();
 
   const filtered = useMemo(() => {
     const list = category === ALL ? products : products.filter((p) => p.categorySlug === category);
-    if (sort === "newest") return list;
+    if (sort === "newest" || (sort === "nearest" && !hasCity)) return list;
+    if (sort === "nearest") {
+      // Stable: same-city sellers first, otherwise keep the server's newest-first order
+      const near = list.filter((p) => isSameCity(p.sellerCity, nearCity));
+      const rest = list.filter((p) => !isSameCity(p.sellerCity, nearCity));
+      return [...near, ...rest];
+    }
     // Unpriced (unavailable) products always go last
     const price = (p: HomeTileProduct, fallback: number) => p.priceMinor ?? fallback;
     return [...list].sort((a, b) =>
@@ -48,7 +60,7 @@ export function HomeJustListed({
         ? price(a, Number.POSITIVE_INFINITY) - price(b, Number.POSITIVE_INFINITY)
         : price(b, Number.NEGATIVE_INFINITY) - price(a, Number.NEGATIVE_INFINITY)
     );
-  }, [products, category, sort]);
+  }, [products, category, sort, nearCity, hasCity]);
 
   const visible = filtered.slice(0, shown);
   const hasMore = filtered.length > shown;
@@ -95,7 +107,7 @@ export function HomeJustListed({
             }}
             className="h-10 rounded-full border border-line bg-white pl-4 pr-3 text-[13px] text-ink hover:border-ink cursor-pointer"
           >
-            {SORT_OPTIONS.map((o) => (
+            {(hasCity ? SORT_OPTIONS : SORT_OPTIONS.filter((o) => o.value !== "nearest")).map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>

@@ -28,6 +28,15 @@ model User {
   phone           String?
   role            UserRole       @default(CUSTOMER)
   isEmailVerified Boolean        @default(false)
+  /// Incremented to revoke every existing session (password change/reset, "sign out everywhere")
+  tokenVersion    Int            @default(0)
+  passwordChangedAt DateTime?
+  /// TOTP two-factor authentication (secret encrypted with DATA_ENCRYPTION_KEY)
+  mfaEnabled      Boolean        @default(false)
+  mfaSecretEnc    String?
+  /// JSON array of SHA-256 hashes of unused recovery codes
+  mfaRecoveryHashesJson String?
+  mfaEnabledAt    DateTime?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
@@ -41,6 +50,25 @@ model User {
   auditLogs       AuditEvent[]
   notifications   Notification[]
   sentInvitations SellerInvitation[]
+  authTokens      AuthToken[]
+}
+
+/// One-time tokens for password reset, email verification and the second login step.
+/// Only a SHA-256 hash of the token is stored.
+model AuthToken {
+  id         String    @id @default(cuid())
+  userId     String
+  purpose    String    // PASSWORD_RESET | EMAIL_VERIFY | MFA_LOGIN
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  usedAt     DateTime?
+  attempts   Int       @default(0)
+  ipAddress  String?
+  createdAt  DateTime  @default(now())
+
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
 }
 
 model Session {
@@ -110,7 +138,9 @@ model SellerOrg {
   commissionRatePercent Int                     @default(10)
   bankName              String?
   bankAccountTitle      String?
-  bankIban              String?
+  bankIban              String?   // encrypted at rest (enc:v1:...) when DATA_ENCRYPTION_KEY is set
+  /// Payouts are blocked for a cooling period after bank details change
+  bankDetailsChangedAt  DateTime?
   city                  String?
   addressLine           String?
   suspensionReason      String?
@@ -125,6 +155,57 @@ model SellerOrg {
   notifications         Notification[]
   invitations           SellerInvitation[]
   settlementLedgers     SettlementLedger[]
+  bankAccountChanges    BankAccountChange[]
+  payoutRequests        PayoutRequest[]
+}
+
+/// History of payout bank account changes. Never stores the full account number.
+model BankAccountChange {
+  id               String    @id @default(cuid())
+  sellerOrgId      String
+  actorUserId      String?
+  bankName         String?
+  accountTitle     String?
+  previousIbanLast4 String?
+  newIbanLast4     String?
+  ipAddress        String?
+  userAgent        String?
+  createdAt        DateTime  @default(now())
+
+  sellerOrg        SellerOrg @relation(fields: [sellerOrgId], references: [id], onDelete: Cascade)
+
+  @@index([sellerOrgId, createdAt])
+}
+
+enum PayoutRequestStatus {
+  REQUESTED
+  APPROVED_PAID
+  REJECTED
+  FAILED
+}
+
+/// Maker-checker seller payouts: one finance operator requests, a different one confirms the
+/// bank transfer (with its reference). Only confirmation writes the ledger debit.
+model PayoutRequest {
+  id              String              @id @default(cuid())
+  sellerOrgId     String
+  amountMinor     Int
+  status          PayoutRequestStatus @default(REQUESTED)
+  requestedById   String
+  decidedById     String?
+  bankReference   String?
+  bankIbanLast4   String?
+  notes           String?
+  decisionNote    String?
+  idempotencyKey  String              @unique
+  ledgerEntryId   String?
+  requestedAt     DateTime            @default(now())
+  decidedAt       DateTime?
+
+  sellerOrg       SellerOrg           @relation(fields: [sellerOrgId], references: [id], onDelete: Restrict)
+
+  @@unique([sellerOrgId, bankReference])
+  @@index([sellerOrgId, status])
 }
 
 model SellerMembership {

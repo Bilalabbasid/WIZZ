@@ -127,9 +127,50 @@ export default async function AdminSellerDetailPage({ params }: { params: Promis
       {payouts && (
         <AdminSellerPayouts
           sellerId={seller.id}
+          sellerName={seller.name}
           isFirstParty={seller.isFirstParty}
+          currentUserId={user.id}
           summary={{
-            ...payouts,
+            availableMinor: payouts.availableMinor,
+            reservedMinor: payouts.reservedMinor,
+            ledgerBalanceMinor: payouts.ledgerBalanceMinor,
+            eligibleMinor: payouts.eligibleMinor,
+            inEscrowMinor: payouts.inEscrowMinor,
+            pendingMinor: payouts.pendingMinor,
+            heldMinor: payouts.heldMinor,
+            paidOutMinor: payouts.paidOutMinor,
+            payoutCount: payouts.payoutCount,
+            reversedPayoutsMinor: payouts.reversedPayoutsMinor,
+            sellerStatus: payouts.sellerStatus,
+            limits: payouts.limits,
+            bank: {
+              ...payouts.bank,
+              bankDetailsChangedAt: payouts.bank.bankDetailsChangedAt?.toISOString() ?? null,
+              payoutHoldUntil: payouts.bank.payoutHoldUntil?.toISOString() ?? null,
+            },
+            bankChanges: payouts.bankChanges.map((c) => ({
+              id: c.id,
+              createdAt: c.createdAt.toISOString(),
+              changedBy: c.changedBy,
+              bankName: c.bankName,
+              previousIbanLast4: c.previousIbanLast4,
+              newIbanLast4: c.newIbanLast4,
+            })),
+            requests: payouts.requests.map((r) => ({
+              id: r.id,
+              sellerOrgId: r.sellerOrgId,
+              amountMinor: r.amountMinor,
+              status: r.status,
+              requestedById: r.requestedById,
+              requestedBy: r.requestedBy,
+              decidedBy: r.decidedBy,
+              bankReference: r.bankReference,
+              bankIbanLast4: r.bankIbanLast4,
+              notes: r.notes,
+              decisionNote: r.decisionNote,
+              requestedAt: r.requestedAt.toISOString(),
+              decidedAt: r.decidedAt?.toISOString() ?? null,
+            })),
             entries: payouts.entries.map((e) => ({
               id: e.id,
               entryType: e.entryType,
@@ -140,7 +181,6 @@ export default async function AdminSellerDetailPage({ params }: { params: Promis
               holdReason: e.holdReason,
               createdAt: e.createdAt.toISOString(),
               sellerOrderNumber: e.sellerOrder?.sellerOrderNumber ?? null,
-              isReversed: e.isReversed,
             })),
           }}
         />

@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { syncDealPricing } from "@/modules/sellers/deal-pricing";
+import { syncDealPricing, getPricingIntent, resolveVariantPricing } from "@/modules/sellers/deal-pricing";
 import { prisma } from "@/lib/db";
 import { SITE_CONFIG } from "@/lib/config";
 import {
@@ -17,6 +17,22 @@ import { assertPaymentMethodAllowed } from "@/lib/payment-methods";
 import { enqueueJob } from "@/lib/jobs";
 import { notifySellerMembers } from "@/modules/orders/lifecycle";
 import { getCommerceSettings } from "@/lib/commerce-settings";
+import {
+  RiskBlockedError,
+  assertIpOrderVelocity,
+  couponReuseError,
+  evaluateCodRiskInTx,
+  flagRefundAbuseIfNeeded,
+  hasCustomerUsedCoupon,
+  lockRiskIdentity,
+  recordRiskEvent,
+  recordRiskEventSafe,
+  type RiskEventInput,
+  type RiskIdentity,
+} from "@/modules/risk/services";
+
+/** Shown when a customer tries a coupon they already used (one use per customer). */
+export const COUPON_ALREADY_USED_MESSAGE = "You have already used this coupon. Each coupon can be used once per customer.";
 
 export interface CheckoutAddress {
   fullName: string;
@@ -132,7 +148,9 @@ export function allocateProRataDiscount(
 export async function calculateCheckoutTotals(
   cartId: string,
   couponCode?: string,
-  shippingTier: "STANDARD" | "EXPRESS" = "STANDARD"
+  shippingTier: "STANDARD" | "EXPRESS" = "STANDARD",
+  /** When known, a coupon this customer already used is reported as not applicable. */
+  customer?: { userId?: string | null; email?: string | null; phone?: string | null }
 ): Promise<CalculationResult> {
   // Apply any deal that started or ended since the last scheduler tick, so the
   // price charged always matches the deal window.
@@ -262,6 +280,16 @@ export async function calculateCheckoutTotals(
         couponError = "This coupon has reached its usage limit.";
       } else if (subtotalMinor < coupon.minOrderAmountMinor) {
         couponError = `This coupon requires a minimum order of ${(coupon.minOrderAmountMinor / 100).toLocaleString("en-PK")} PKR.`;
+      } else if (
+        customer &&
+        (customer.userId || customer.email || customer.phone) &&
+        (await hasCustomerUsedCoupon(prisma, coupon.code, {
+          userId: customer.userId ?? null,
+          email: customer.email ?? "",
+          phone: customer.phone ?? null,
+        }))
+      ) {
+        couponError = COUPON_ALREADY_USED_MESSAGE;
       } else {
         if (coupon.discountType === DiscountType.PERCENTAGE) {
           discountMinor = Math.round((subtotalMinor * coupon.discountValueMinor) / 100);
@@ -411,6 +439,12 @@ export interface PlaceOrderInput {
   couponCode?: string;
   idempotencyKey: string;
   paymentMethod?: "CASH_ON_DELIVERY" | "ONLINE_SANDBOX";
+  /**
+   * Request context for fraud and abuse rules. The HTTP route always passes it. When it is
+   * omitted (internal tooling, tests) the rules are skipped, except in production where they
+   * are always enforced.
+   */
+  risk?: { ipAddress?: string | null };
 }
 
 function isUniqueViolation(err: unknown, field?: string): boolean {
@@ -420,7 +454,7 @@ function isUniqueViolation(err: unknown, field?: string): boolean {
   return Array.isArray(target) ? target.includes(field) : String(target ?? "").includes(field);
 }
 
-async function findOrderByIdempotencyKey(idempotencyKey: string, customerUserId?: string) {
+async function findOrderByIdempotencyKey(idempotencyKey: string, customerUserId?: string, cartId?: string) {
   const attempt = await prisma.paymentAttempt.findUnique({
     where: { idempotencyKey },
     include: {
@@ -436,6 +470,16 @@ async function findOrderByIdempotencyKey(idempotencyKey: string, customerUserId?
   // A retry key is bound to the account that created it.
   if ((attempt.customerOrder.customerUserId ?? null) !== (customerUserId ?? null)) {
     throw new Error("IDEMPOTENCY_KEY_CONFLICT: This request key belongs to a different customer.");
+  }
+  // ...and to the cart it was created from (guests share customerUserId = null).
+  if (cartId) {
+    const fromThisCart = await prisma.inventoryReservation.findFirst({
+      where: { orderId: attempt.customerOrderId, cartId },
+      select: { id: true },
+    });
+    if (!fromThisCart) {
+      throw new Error("IDEMPOTENCY_KEY_CONFLICT: This request key was already used for a different cart.");
+    }
   }
   return attempt.customerOrder;
 }
@@ -460,17 +504,29 @@ export async function placeOrder(input: PlaceOrderInput) {
     paymentMethod = "ONLINE_SANDBOX",
   } = input;
 
+  // Fraud and abuse rules: always for HTTP traffic (the route passes `risk`) and in production.
+  const enforceRisk = Boolean(input.risk) || process.env.NODE_ENV === "production";
+  const identity: RiskIdentity = {
+    userId: customerUserId ?? null,
+    email: customerEmail,
+    phone: customerPhone || shippingAddress.phone || null,
+    ipAddress: input.risk?.ipAddress ?? null,
+  };
+
   // 1. Idempotency: a repeated submission with the same key returns the original order.
-  const existingOrder = await findOrderByIdempotencyKey(idempotencyKey, customerUserId);
+  const existingOrder = await findOrderByIdempotencyKey(idempotencyKey, customerUserId, cartId);
   if (existingOrder) return existingOrder;
 
   try {
+    if (enforceRisk) assertIpOrderVelocity(identity, cartId);
+
     // 2. Authoritatively calculate totals on the server (never from the browser).
-    const totals = await calculateCheckoutTotals(cartId, couponCode, shippingTier);
+    const totals = await calculateCheckoutTotals(cartId, couponCode, shippingTier, enforceRisk ? identity : undefined);
     const method = assertPaymentMethodAllowed(paymentMethod, totals.totalMinor, (await getCommerceSettings()).codMaxOrderMinor);
     const isCod = method === "CASH_ON_DELIVERY";
 
     if (couponCode && couponCode.trim() && !totals.appliedCoupon) {
+      if (totals.couponError === COUPON_ALREADY_USED_MESSAGE) throw couponReuseError(couponCode.trim().toUpperCase(), identity, cartId);
       throw new Error(`COUPON_INVALID: ${totals.couponError || "The coupon could not be applied."}`);
     }
 
@@ -489,6 +545,7 @@ export async function placeOrder(input: PlaceOrderInput) {
           shippingAddress,
           billingAddress,
           idempotencyKey,
+          risk: enforceRisk ? identity : null,
         });
 
         // Best-effort notification; failures are retried by the job worker and never block the order.
@@ -507,10 +564,46 @@ export async function placeOrder(input: PlaceOrderInput) {
     }
     throw lastError;
   } catch (err) {
+    // Blocked by a risk rule: keep the evidence (the order transaction itself was rolled back).
+    if (err instanceof RiskBlockedError && !err.skipAudit) {
+      await recordRiskEventSafe(err.event);
+    }
     // A concurrent duplicate submission with the same key may have created the order in the meantime.
-    const replay = await findOrderByIdempotencyKey(idempotencyKey, customerUserId);
+    const replay = await findOrderByIdempotencyKey(idempotencyKey, customerUserId, cartId).catch(() => null);
     if (replay) return replay;
     throw err;
+  }
+}
+
+/**
+ * Re-reads the price of every line inside the order transaction. A deal that ended (or a
+ * seller price change) between the totals calculation and placement refuses the order
+ * instead of charging a stale price.
+ */
+async function assertPricesUnchanged(tx: Prisma.TransactionClient, totals: CalculationResult) {
+  const variants = await tx.productVariant.findMany({
+    where: { id: { in: totals.items.map((i) => i.variantId) } },
+    select: {
+      id: true,
+      priceMinor: true,
+      compareAtPriceMinor: true,
+      dealPriceMinor: true,
+      dealStartsAt: true,
+      dealEndsAt: true,
+      dealRegularPriceMinor: true,
+      dealRegularCompareAtMinor: true,
+    },
+  });
+  const byId = new Map(variants.map((v) => [v.id, v]));
+  const now = new Date();
+  for (const item of totals.items) {
+    const v = byId.get(item.variantId);
+    const effective = v ? resolveVariantPricing(getPricingIntent(v), now).priceMinor : null;
+    if (!v || v.priceMinor !== item.unitPriceMinor || effective !== item.unitPriceMinor) {
+      throw new Error(
+        `PRICE_CHANGED: The price of "${item.productTitle}" changed while you were checking out. Please review your cart and place the order again.`
+      );
+    }
   }
 }
 
@@ -525,6 +618,8 @@ async function createOrderTransaction(args: {
   shippingAddress: CheckoutAddress;
   billingAddress?: CheckoutAddress;
   idempotencyKey: string;
+  /** Customer identity for risk rules, or null when they are not enforced. */
+  risk: RiskIdentity | null;
 }) {
   const {
     totals,
@@ -537,6 +632,7 @@ async function createOrderTransaction(args: {
     shippingAddress,
     billingAddress,
     idempotencyKey,
+    risk,
   } = args;
 
   return prisma.$transaction(
@@ -550,6 +646,11 @@ async function createOrderTransaction(args: {
         throw new Error("CART_NOT_ACTIVE: This cart has already been checked out.");
       }
 
+      // Serialise checkouts of the same customer so velocity and coupon rules are race-free.
+      if (risk) await lockRiskIdentity(tx, risk);
+
+      await assertPricesUnchanged(tx, totals);
+
       // Atomically consume one coupon use; refuses when the usage limit was reached concurrently.
       if (totals.appliedCoupon) {
         const consumed = await tx.$executeRaw`
@@ -562,7 +663,15 @@ async function createOrderTransaction(args: {
         if (consumed !== 1) {
           throw new Error("COUPON_INVALID: This coupon has reached its usage limit.");
         }
+        // One use per customer. The UPDATE above holds the coupon row lock until commit, so a
+        // concurrent checkout with the same coupon waits here and then sees this order.
+        if (risk && (await hasCustomerUsedCoupon(tx, totals.appliedCoupon.code, risk))) {
+          throw couponReuseError(totals.appliedCoupon.code, risk, cartId);
+        }
       }
+
+      // Cash-on-delivery velocity / cancellation rules (may block; returns review flags).
+      const riskFlags: RiskEventInput[] = risk && isCod ? await evaluateCodRiskInTx(tx, risk, cartId) : [];
 
       const orderNotes = JSON.stringify({
         paymentMethod: isCod ? "CASH_ON_DELIVERY" : "ONLINE_SANDBOX",
@@ -718,6 +827,14 @@ async function createOrderTransaction(args: {
           transactionRef: isCod ? `COD_${orderNumber}` : undefined,
         },
       });
+
+      // Review flags commit together with the order they refer to.
+      for (const flag of riskFlags) {
+        await recordRiskEvent(tx, { ...flag, orderId: customerOrder.id, orderNumber });
+      }
+      if (risk?.userId) {
+        await flagRefundAbuseIfNeeded(tx, risk, { orderId: customerOrder.id, orderNumber });
+      }
 
       return customerOrder;
     },

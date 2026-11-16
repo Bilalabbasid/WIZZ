@@ -28,6 +28,15 @@ for (const key of ["JWT_SECRET", "CRON_SECRET", "PAYMENT_WEBHOOK_SECRET"]) {
 }
 if (env.JWT_SECRET && env.JWT_SECRET === env.CRON_SECRET) errors.push("JWT_SECRET and CRON_SECRET must be different values.");
 
+// Field encryption for bank account numbers and two-factor secrets
+if (!env.DATA_ENCRYPTION_KEY) {
+  errors.push("DATA_ENCRYPTION_KEY is missing (bank details and 2FA secrets are encrypted with it). Generate with: openssl rand -base64 32 — and keep a safe copy: data encrypted with it cannot be read without it.");
+} else if (Buffer.from(env.DATA_ENCRYPTION_KEY, "base64").length !== 32) {
+  errors.push("DATA_ENCRYPTION_KEY must be 32 bytes, base64-encoded (openssl rand -base64 32).");
+} else if ([env.JWT_SECRET, env.CRON_SECRET, env.PAYMENT_WEBHOOK_SECRET].includes(env.DATA_ENCRYPTION_KEY)) {
+  errors.push("DATA_ENCRYPTION_KEY must be different from the other secrets.");
+}
+
 // URLs
 for (const key of ["APP_URL", "NEXT_PUBLIC_APP_URL"]) {
   const v = env[key];

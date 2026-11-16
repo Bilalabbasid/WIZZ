@@ -1,13 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { clientErrorMessage, clientErrorStatus } from "@/lib/api-error";
-import { getCurrentUser, hashPassword, verifyPassword } from "@/lib/auth";
+import {
+  authRequestMeta,
+  getCurrentUser,
+  hashPassword,
+  issueSessionToken,
+  recordAuthEvent,
+  setSessionCookie,
+  verifyPassword,
+} from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { formatZodError, passwordChangeSchema, zodFieldErrors } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
-// POST /api/account/password - change the signed-in user's password
+// POST /api/account/password - change the signed-in user's password (current password required).
+// Revokes every other session (tokenVersion bump) and re-issues this device's session.
 export async function POST(req: NextRequest) {
   try {
     const user = await getCurrentUser();
@@ -60,12 +69,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    await prisma.user.update({
+    const updated = await prisma.user.update({
       where: { id: user.id },
-      data: { passwordHash: await hashPassword(newPassword) },
+      data: {
+        passwordHash: await hashPassword(newPassword),
+        passwordChangedAt: new Date(),
+        // Signs out every other device; this one gets a fresh session below.
+        tokenVersion: { increment: 1 },
+      },
+      select: { id: true, email: true, role: true, tokenVersion: true },
     });
+    await recordAuthEvent({ action: "PASSWORD_CHANGED", userId: user.id, meta: authRequestMeta(req.headers) });
 
-    return NextResponse.json({ success: true });
+    const res = NextResponse.json({ success: true, otherSessionsSignedOut: true });
+    setSessionCookie(res, await issueSessionToken(updated, { mfa: user.sessionMfa }), updated.role);
+    return res;
   } catch (err: unknown) {
     return NextResponse.json(
       { error: clientErrorMessage(err, "We could not change your password.") },

@@ -107,9 +107,15 @@ if (runDeploySteps) {
   run("Checking environment variables", node, [path.join(__dirname, "check-deploy-env.js")]);
   run("Generating Prisma client", node, [prismaCli, "generate"]);
   const dbEnv = singleConnectionEnv();
-  const dbOptions = { env: dbEnv, attempts: 4, softOnPoolFull: process.env.WIZZ_STRICT_DB_STEPS !== "1" };
-  run("Updating database schema (no data loss)", node, [prismaCli, "db", "push", "--skip-generate"], dbOptions);
-  run("Bootstrapping store, categories and admin", node, [tsxCli, path.join("scripts", "bootstrap-production.ts")], dbOptions);
+  // The schema step must never be skipped: if the new code expects new columns and they are
+  // missing, the release would break. On failure the deploy stops and the current release keeps
+  // running. Bootstrap (idempotent essentials + DB guards) may be skipped when the pool is full.
+  run("Updating database schema (no data loss)", node, [prismaCli, "db", "push", "--skip-generate"], { env: dbEnv, attempts: 5 });
+  run("Bootstrapping store, categories and admin", node, [tsxCli, path.join("scripts", "bootstrap-production.ts")], {
+    env: dbEnv,
+    attempts: 4,
+    softOnPoolFull: process.env.WIZZ_STRICT_DB_STEPS !== "1",
+  });
 } else {
   console.log("[build] Deploy steps skipped (not a production build). Set NODE_ENV=production or pass --deploy to run them.");
 }

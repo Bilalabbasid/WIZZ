@@ -38,6 +38,10 @@ cp .env.example .env
 | `NEXT_PUBLIC_APP_URL` | **Yes** | `https://wizz.pk` | Client-accessible base URL |
 | `DATABASE_URL` | **Yes** | `postgresql://user:pass@host:5432/wizz_prod?schema=public&connection_limit=10` | PostgreSQL connection string |
 
+> **`DATA_ENCRYPTION_KEY` (required):** 32 random bytes, base64 (`openssl rand -base64 32`). Bank account numbers and two-factor secrets are encrypted with it. **Back it up**: if it is lost or changed, that data can't be decrypted. The deploy stops if it is missing.
+>
+> **Admin two-factor:** platform admins must enrol TOTP at `/account/security` before the admin console opens. If an admin loses their phone and recovery codes, run on the server: `npx tsx scripts/reset-admin-mfa.ts admin@example.com --confirm`.
+
 > **Supabase / hosted poolers:** the Supabase session pooler (port 5432) allows only 15 clients in total. Keep `connection_limit=5` (or lower) in `DATABASE_URL`. The app caps its pool at 5 when the URL has no limit (`DB_CONNECTION_LIMIT` overrides it), and the deploy steps (`db push`, bootstrap) use one connection each and retry for up to ~1.5 minutes if the pooler is momentarily full ("max clients reached").
 | `JWT_SECRET` | **Yes** | `openssl rand -base64 32` | 32+ char secret for user session tokens & signed URLs |
 | `CRON_SECRET` | **Yes** | `openssl rand -base64 32` | Bearer token authenticating `/api/cron/cleanup` |

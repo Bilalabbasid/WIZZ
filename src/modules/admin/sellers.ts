@@ -106,8 +106,20 @@ export async function getSellerDetail(id: string) {
     publishedProducts,
     pendingModeration,
     gmvMinor: gmv._sum.totalMinor ?? 0,
-    recentAudit,
+    recentAudit: recentAudit.map((a) => ({ ...a, detailsJson: maskAccountNumbersInJson(a.detailsJson) })),
   };
+}
+
+/**
+ * Display-time safety net for audit details written by older code (full IBANs in PROFILE_UPDATE /
+ * MANUAL_PAYOUT_EXECUTED). Bootstrap scrubs them at rest once; this keeps the page safe regardless.
+ */
+export function maskAccountNumbersInJson(detailsJson: string): string {
+  return detailsJson.replace(/("[A-Za-z]*[Ii]ban"\s*:\s*")([^"]*)"/g, (match, key: string, value: string) => {
+    if (/last4/i.test(key) || value.startsWith("•")) return match;
+    const clean = value.replace(/\s+/g, "");
+    return `${key}•••• ${clean.startsWith("enc:") ? "" : clean.slice(-4)}"`;
+  });
 }
 
 export const sellerStatusSchema = z.discriminatedUnion("action", [

@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
+import { CITY_COOKIE, normalizeCity } from "@/lib/location";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { SITE_CONFIG } from "@/lib/config";
@@ -107,6 +109,7 @@ function liveDealEnd(p: TileRow, now: Date): Date | null {
 export default async function HomePage() {
   // Render per request (never query the database during `next build`)
   await connection();
+  const shopperCity = normalizeCity((await cookies()).get(CITY_COOKIE)?.value);
   const [{ returnWindowDays }, categories, listingRows, dealRows, categoryCovers] = await Promise.all([
     getCommerceSettings(),
     getCategories(),
@@ -193,7 +196,7 @@ export default async function HomePage() {
 
       <HomeDealsStrip products={dealTiles} soonestEndsAt={soonestEnd ? soonestEnd.toISOString() : null} />
 
-      <HomeJustListed products={listing} categories={pillCategories} />
+      <HomeJustListed products={listing} categories={pillCategories} nearCity={shopperCity} />
 
       <HomePromiseCards returnWindowDays={returnWindowDays} />
     </div>

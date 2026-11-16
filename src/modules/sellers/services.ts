@@ -5,10 +5,104 @@ import {
   SellerMembershipRole,
   UserRole,
 } from "@prisma/client";
-import { hashPassword } from "@/lib/auth";
+import { hashPassword, reauthenticate } from "@/lib/auth";
 import { z } from "zod";
 import { randomBytes } from "crypto";
 import { getCommerceSettings } from "@/lib/commerce-settings";
+import { decryptField, encryptField, isEncryptedValue, last4 } from "@/lib/crypto";
+
+/* ------------------------------------------------------------------ */
+/* Payout bank account: encryption at rest, masking, change protection  */
+/* ------------------------------------------------------------------ */
+
+/** Payouts to a seller are paused for this long after its bank account changes. */
+export const BANK_CHANGE_PAYOUT_HOLD_HOURS = 72;
+const BANK_CHANGE_HOLD_MS = BANK_CHANGE_PAYOUT_HOLD_HOURS * 60 * 60 * 1000;
+
+/** Store roles allowed to change payout bank details (mirrors STORE_ADMIN_ROLES in api-guard). */
+const BANK_ADMIN_ROLES: SellerMembershipRole[] = [SellerMembershipRole.OWNER, SellerMembershipRole.ADMIN];
+
+/** A value the browser sends back when the user left a masked IBAN untouched ("•••• 1234"). */
+const MASKED_VALUE = /[•*]/;
+
+export function normalizeIban(value: string): string {
+  return value.replace(/\s+/g, "").toUpperCase();
+}
+
+/** Returns an error message, or null when the (normalized) IBAN is acceptable. */
+export function ibanFormatError(iban: string): string | null {
+  if (!/^[A-Z0-9]{10,34}$/.test(iban)) return "IBAN may contain only letters and digits (10-34 characters).";
+  // Pakistani IBANs: PK + 2 check digits + 4-letter bank code + 16-digit account number
+  if (iban.startsWith("PK") && !/^PK\d{2}[A-Z]{4}\d{16}$/.test(iban)) {
+    return "A Pakistani IBAN has 24 characters: PK, 2 digits, the 4-letter bank code and 16 digits.";
+  }
+  return null;
+}
+
+/** Plaintext of a stored IBAN (ciphertext or legacy plaintext); null when absent or unreadable. Server-side only. */
+export function readStoredIban(stored: string | null | undefined): string | null {
+  if (!stored) return null;
+  try {
+    return decryptField(stored);
+  } catch {
+    return null;
+  }
+}
+
+export function storedIbanLast4(stored: string | null | undefined): string | null {
+  return last4(readStoredIban(stored));
+}
+
+/** Display form of a stored IBAN: "•••• 1234". Never returns the full number. */
+export function maskStoredIban(stored: string | null | undefined): string | null {
+  if (!stored) return null;
+  const l4 = storedIbanLast4(stored);
+  return l4 ? `•••• ${l4}` : "•••• (on file)";
+}
+
+/** The only form an IBAN is persisted in: AES-256-GCM ciphertext (throws when no key is configured). */
+export function toStoredIban(value: string | null | undefined): string | null {
+  if (!value) return null;
+  if (isEncryptedValue(value)) return value;
+  return encryptField(normalizeIban(value));
+}
+
+/** When payouts resume after the last bank change, or null when no hold applies now. */
+export function payoutHoldUntil(changedAt: Date | null | undefined, now = new Date()): Date | null {
+  if (!changedAt) return null;
+  const until = new Date(changedAt.getTime() + BANK_CHANGE_HOLD_MS);
+  return until > now ? until : null;
+}
+
+/** Pakistan time, for messages shown to sellers and finance staff. */
+export function formatPkTime(date: Date): string {
+  return date.toLocaleString("en-PK", { timeZone: "Asia/Karachi", dateStyle: "medium", timeStyle: "short" });
+}
+
+function redactApplication<T extends { bankIban: string | null }>(app: T): T & { bankIbanLast4: string | null } {
+  return { ...app, bankIban: maskStoredIban(app.bankIban), bankIbanLast4: storedIbanLast4(app.bankIban) };
+}
+
+function redactOrg<T extends { bankIban: string | null }>(org: T): T {
+  return { ...org, bankIban: maskStoredIban(org.bankIban) };
+}
+
+/**
+ * Re-authentication for sensitive seller actions (payout bank changes): delegates to the auth
+ * module's shared helper (current password, 5 attempts / 15 min per user, refused while the
+ * account is locked, failures audited). Throws "VALIDATION: …" (HTTP 400).
+ */
+export async function confirmCurrentPassword(
+  userId: string,
+  currentPassword: unknown,
+  meta?: { ipAddress: string | null; userAgent: string | null }
+): Promise<void> {
+  if (typeof currentPassword !== "string" || currentPassword.length === 0) {
+    throw new Error("VALIDATION: Enter your current password to confirm this change.");
+  }
+  if (currentPassword.length > 200) throw new Error("VALIDATION: The password you entered is incorrect.");
+  await reauthenticate(userId, currentPassword, meta);
+}
 
 export interface SellerApplicationInput {
   legalBusinessName: string;
@@ -69,14 +163,26 @@ const REQUIRED_FOR_SUBMIT: Array<[keyof z.infer<typeof applicationDraftSchema>, 
   ["bankIban", "IBAN"],
 ];
 
-function parseApplicationFields(data: unknown, requireComplete: boolean) {
-  const parsed = applicationDraftSchema.safeParse(data ?? {});
+/**
+ * Validates applicant input. The IBAN is returned already encrypted; a masked value sent back
+ * by the form ("•••• 1234") keeps the IBAN already on file (`existingStoredIban`).
+ */
+function parseApplicationFields(data: unknown, requireComplete: boolean, existingStoredIban: string | null = null) {
+  const raw = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
+  const keepIban = typeof raw.bankIban === "string" && MASKED_VALUE.test(raw.bankIban);
+  const parsed = applicationDraftSchema.safeParse({ ...raw, bankIban: keepIban ? null : raw.bankIban });
   if (!parsed.success) {
     throw new Error(parsed.error.issues.map((i) => i.message).join(" "));
   }
   const fields = parsed.data;
+  const ibanPlain = fields.bankIban ? normalizeIban(fields.bankIban) : null;
+  if (ibanPlain) {
+    const ibanError = ibanFormatError(ibanPlain);
+    if (ibanError) throw new Error(`VALIDATION: ${ibanError}`);
+  }
+  const storedIban = ibanPlain ? toStoredIban(ibanPlain) : keepIban ? existingStoredIban : null;
   if (requireComplete) {
-    const missing = REQUIRED_FOR_SUBMIT.filter(([key]) => !fields[key]).map(([, label]) => label);
+    const missing = REQUIRED_FOR_SUBMIT.filter(([key]) => (key === "bankIban" ? !storedIban : !fields[key])).map(([, label]) => label);
     if (missing.length) throw new Error(`Please complete: ${missing.join(", ")}.`);
   }
   return {
@@ -93,7 +199,7 @@ function parseApplicationFields(data: unknown, requireComplete: boolean) {
     contactPhone: fields.contactPhone ?? "",
     bankName: fields.bankName,
     bankAccountTitle: fields.bankAccountTitle,
-    bankIban: fields.bankIban ? fields.bankIban.replace(/\s+/g, "").toUpperCase() : null,
+    bankIban: storedIban,
     notes: fields.notes,
   };
 }
@@ -143,7 +249,8 @@ export async function registerSellerAccount(input: SellerRegistrationInput) {
         lastName: input.lastName.trim(),
         phone: input.phone?.trim() || null,
         role: UserRole.CUSTOMER,
-        isEmailVerified: true,
+        // Verified only through the email verification link
+        isEmailVerified: false,
       },
     });
 
@@ -228,9 +335,13 @@ export async function getSellerContextForUser(userId: string) {
 
   if (!user) return null;
 
-  const membership = user.memberships[0] || null;
+  // This context is returned by /api/seller/context: bank numbers are masked here, never sent in full.
+  // (`x || null` keeps Prisma's non-null element typing that callers rely on after their own null checks.)
+  const rawMembership = user.memberships[0] || null;
+  const membership = rawMembership ? { ...rawMembership, sellerOrg: redactOrg(rawMembership.sellerOrg) } : rawMembership;
   const sellerOrg = membership?.sellerOrg || null;
-  const application = user.applications[0] || null;
+  const rawApplication = user.applications[0] || null;
+  const application = rawApplication ? redactApplication(rawApplication) : rawApplication;
 
   const isApproved = application?.status === SellerApplicationStatus.APPROVED;
   const isActiveOrg = sellerOrg?.operationalStatus === SellerOperationalStatus.ACTIVE;
@@ -260,8 +371,9 @@ export async function getSellerContextForUser(userId: string) {
   };
 }
 
+/** The applicant's latest application. `bankIban` is masked ("•••• 1234"); `bankIbanLast4` is added. */
 export async function getSellerApplicationByUserId(userId: string) {
-  return prisma.sellerApplication.findFirst({
+  const app = await prisma.sellerApplication.findFirst({
     where: { applicantUserId: userId },
     include: {
       events: { orderBy: { createdAt: "desc" } },
@@ -269,10 +381,11 @@ export async function getSellerApplicationByUserId(userId: string) {
     },
     orderBy: { createdAt: "desc" },
   });
+  return app ? redactApplication(app) : null;
 }
 
 export async function getSellerApplicationById(applicationId: string) {
-  return prisma.sellerApplication.findUnique({
+  const app = await prisma.sellerApplication.findUnique({
     where: { id: applicationId },
     include: {
       applicantUser: { select: { id: true, email: true, firstName: true, lastName: true } },
@@ -280,25 +393,28 @@ export async function getSellerApplicationById(applicationId: string) {
       documents: true,
     },
   });
+  return app ? redactApplication(app) : null;
 }
 
 export async function saveApplicationDraft(userId: string, data: unknown) {
-  const fields = parseApplicationFields(data, false);
   const existing = await prisma.sellerApplication.findFirst({
     where: {
       applicantUserId: userId,
       status: { in: [SellerApplicationStatus.DRAFT, SellerApplicationStatus.CHANGES_REQUESTED] },
     },
   });
+  const fields = parseApplicationFields(data, false, existing?.bankIban ?? null);
 
   if (existing) {
-    return prisma.sellerApplication.update({ where: { id: existing.id }, data: fields });
+    return redactApplication(await prisma.sellerApplication.update({ where: { id: existing.id }, data: fields }));
   }
 
   await assertNoOpenApplication(userId);
-  return prisma.sellerApplication.create({
-    data: { applicantUserId: userId, ...fields, status: SellerApplicationStatus.DRAFT },
-  });
+  return redactApplication(
+    await prisma.sellerApplication.create({
+      data: { applicantUserId: userId, ...fields, status: SellerApplicationStatus.DRAFT },
+    })
+  );
 }
 
 /** An applicant cannot start a second application while one is under review or decided. */
@@ -315,18 +431,18 @@ async function assertNoOpenApplication(userId: string) {
 }
 
 export async function submitSellerApplication(userId: string, data: unknown) {
-  const fields = parseApplicationFields(data, true);
   const existing = await prisma.sellerApplication.findFirst({
     where: {
       applicantUserId: userId,
       status: { in: [SellerApplicationStatus.DRAFT, SellerApplicationStatus.CHANGES_REQUESTED] },
     },
   });
+  const fields = parseApplicationFields(data, true, existing?.bankIban ?? null);
 
   const fromStatus = existing?.status || SellerApplicationStatus.DRAFT;
 
   if (existing) {
-    return prisma.$transaction(async (tx) => {
+    const updatedApp = await prisma.$transaction(async (tx) => {
       const updated = await tx.sellerApplication.update({
         where: { id: existing.id },
         data: {
@@ -348,10 +464,11 @@ export async function submitSellerApplication(userId: string, data: unknown) {
 
       return updated;
     });
+    return redactApplication(updatedApp);
   }
 
   await assertNoOpenApplication(userId);
-  return prisma.$transaction(async (tx) => {
+  const createdApp = await prisma.$transaction(async (tx) => {
     const created = await tx.sellerApplication.create({
       data: {
         applicantUserId: userId,
@@ -373,11 +490,13 @@ export async function submitSellerApplication(userId: string, data: unknown) {
 
     return created;
   });
+  return redactApplication(createdApp);
 }
 
+/** Admin review list. IBANs are masked; reviewers compare bank name/title and the last 4 digits. */
 export async function getAllSellerApplications(statusFilter?: SellerApplicationStatus) {
   const where = statusFilter ? { status: statusFilter } : {};
-  return prisma.sellerApplication.findMany({
+  const apps = await prisma.sellerApplication.findMany({
     where,
     orderBy: { createdAt: "desc" },
     include: {
@@ -386,6 +505,7 @@ export async function getAllSellerApplications(statusFilter?: SellerApplicationS
       events: { take: 3, orderBy: { createdAt: "desc" } },
     },
   });
+  return apps.map(redactApplication);
 }
 
 export async function reviewSellerApplication(
@@ -435,10 +555,16 @@ export async function reviewSellerApplication(
       ? SellerApplicationStatus.REJECTED
       : SellerApplicationStatus.CHANGES_REQUESTED;
 
-  return prisma.$transaction(async (tx) => {
+  // The org receives the IBAN encrypted (legacy plaintext applications are encrypted here)
+  const approvedIban = decision === "APPROVED" ? toStoredIban(application.bankIban) : null;
+
+  const reviewed = await prisma.$transaction(async (tx) => {
     let approvedOrgId = application.approvedOrgId;
 
     if (decision === "APPROVED") {
+      const previousOrgIban = approvedOrgId
+        ? (await tx.sellerOrg.findUnique({ where: { id: approvedOrgId }, select: { bankIban: true } }))?.bankIban ?? null
+        : null;
       if (approvedOrgId) {
         // Activate existing provisioned SellerOrg
         await tx.sellerOrg.update({
@@ -451,7 +577,7 @@ export async function reviewSellerApplication(
             contactPhone: application.contactPhone,
             bankName: application.bankName,
             bankAccountTitle: application.bankAccountTitle,
-            bankIban: application.bankIban,
+            bankIban: approvedIban,
             city: application.city,
             addressLine: application.addressLine,
           },
@@ -496,7 +622,7 @@ export async function reviewSellerApplication(
             contactPhone: application.contactPhone,
             bankName: application.bankName,
             bankAccountTitle: application.bankAccountTitle,
-            bankIban: application.bankIban,
+            bankIban: approvedIban,
             city: application.city,
             addressLine: application.addressLine,
             commissionRatePercent: (await getCommerceSettings()).defaultCommissionPercent,
@@ -511,6 +637,20 @@ export async function reviewSellerApplication(
             sellerOrgId: sellerOrg.id,
             userId: application.applicantUserId,
             role: SellerMembershipRole.OWNER,
+          },
+        });
+      }
+
+      // Payout account history starts with the KYC-reviewed account (last 4 digits only)
+      if (approvedOrgId && approvedIban && readStoredIban(approvedIban) !== readStoredIban(previousOrgIban)) {
+        await tx.bankAccountChange.create({
+          data: {
+            sellerOrgId: approvedOrgId,
+            actorUserId: reviewerUserId,
+            bankName: application.bankName,
+            accountTitle: application.bankAccountTitle,
+            previousIbanLast4: storedIbanLast4(previousOrgIban),
+            newIbanLast4: storedIbanLast4(approvedIban),
           },
         });
       }
@@ -584,6 +724,7 @@ export async function reviewSellerApplication(
 
     return updatedApp;
   });
+  return redactApplication(reviewed);
 }
 
 /**
@@ -681,25 +822,28 @@ export async function reactivateSellerOrg(sellerOrgId: string, adminUserId: stri
   });
 }
 
+export interface SellerProfileUpdate {
+  name?: string;
+  logoUrl?: string;
+  bannerUrl?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  city?: string;
+  addressLine?: string;
+}
+
+const PROFILE_FIELDS: Array<keyof SellerProfileUpdate> = ["name", "logoUrl", "bannerUrl", "contactEmail", "contactPhone", "city", "addressLine"];
+
 /**
- * Updates a seller organization's store profile, address, and settlement bank details.
+ * Updates a seller organization's store profile and address. Payout bank details are NOT
+ * editable here (no password needed, bankDetailsChangedAt untouched): they change only through
+ * changeSellerBankAccount, which requires re-authentication.
  */
-export async function updateSellerOrgProfile(
-  sellerOrgId: string,
-  data: {
-    name?: string;
-    logoUrl?: string;
-    bannerUrl?: string;
-    contactEmail?: string;
-    contactPhone?: string;
-    city?: string;
-    addressLine?: string;
-    bankName?: string;
-    bankAccountTitle?: string;
-    bankIban?: string;
-  },
-  actorUserId?: string
-) {
+export async function updateSellerOrgProfile(sellerOrgId: string, input: SellerProfileUpdate, actorUserId?: string) {
+  const data: SellerProfileUpdate = {};
+  for (const key of PROFILE_FIELDS) {
+    if (input[key] !== undefined) data[key] = input[key];
+  }
   return prisma.$transaction(async (tx) => {
     const updated = await tx.sellerOrg.update({
       where: { id: sellerOrgId },
@@ -718,8 +862,212 @@ export async function updateSellerOrgProfile(
       });
     }
 
-    return updated;
+    return redactOrg(updated);
   });
+}
+
+/** Seller-facing payout account summary: masked number, hold status and (optionally) change history. */
+export async function getSellerBankView(sellerOrgId: string, options: { includeHistory?: boolean } = {}) {
+  const org = await prisma.sellerOrg.findUnique({
+    where: { id: sellerOrgId },
+    select: { bankName: true, bankAccountTitle: true, bankIban: true, bankDetailsChangedAt: true },
+  });
+  if (!org) throw new Error("VALIDATION: Store not found.");
+  const history = options.includeHistory
+    ? await prisma.bankAccountChange.findMany({
+        where: { sellerOrgId },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+        select: { id: true, createdAt: true, actorUserId: true, bankName: true, previousIbanLast4: true, newIbanLast4: true },
+      })
+    : [];
+  const actorIds = [...new Set(history.map((h) => h.actorUserId).filter((v): v is string => Boolean(v)))];
+  const actors = actorIds.length
+    ? await prisma.user.findMany({
+        where: { id: { in: actorIds } },
+        select: { id: true, firstName: true, lastName: true, memberships: { where: { sellerOrgId }, select: { id: true } } },
+      })
+    : [];
+  // Team members are shown by name; platform staff (e.g. the KYC approval) are not named to sellers
+  const actorName = new Map(
+    actors.map((a) => [a.id, a.memberships.length > 0 ? `${a.firstName} ${a.lastName}`.trim() : "WIZZ.PK (KYC approval)"])
+  );
+  return {
+    bankName: org.bankName,
+    bankAccountTitle: org.bankAccountTitle,
+    bankIbanMasked: maskStoredIban(org.bankIban),
+    bankIbanLast4: storedIbanLast4(org.bankIban),
+    hasBankAccount: Boolean(org.bankIban && org.bankAccountTitle),
+    bankDetailsChangedAt: org.bankDetailsChangedAt,
+    payoutHoldUntil: payoutHoldUntil(org.bankDetailsChangedAt),
+    holdHours: BANK_CHANGE_PAYOUT_HOLD_HOURS,
+    history: history.map((h) => ({
+      id: h.id,
+      createdAt: h.createdAt,
+      changedBy: h.actorUserId ? actorName.get(h.actorUserId) ?? "Former team member" : "System",
+      bankName: h.bankName,
+      previousIbanLast4: h.previousIbanLast4,
+      newIbanLast4: h.newIbanLast4,
+    })),
+  };
+}
+
+const bankChangeSchema = z.object({
+  bankName: z.preprocess((v) => (typeof v === "string" ? v.trim() : v), z.string({ error: "Enter the bank name." }).min(2, "Enter the bank name.").max(120)),
+  bankAccountTitle: z.preprocess(
+    (v) => (typeof v === "string" ? v.trim() : v),
+    z.string({ error: "Enter the account title." }).min(2, "Enter the account title exactly as on the bank account.").max(160)
+  ),
+  bankIban: z.preprocess((v) => (typeof v === "string" ? normalizeIban(v) : v), z.string({ error: "Enter the IBAN." }).min(1, "Enter the IBAN.")),
+});
+
+/**
+ * Changes the payout bank account. Requires an OWNER/ADMIN membership (re-checked here, never
+ * trusted from the caller) and the user's current password. In one transaction, with the org row
+ * locked (payout approvals take the same lock): stores the new IBAN encrypted, sets
+ * bankDetailsChangedAt (which pauses payouts for BANK_CHANGE_PAYOUT_HOLD_HOURS), records a
+ * BankAccountChange row, cancels open payout requests to the old account, writes the
+ * BANK_DETAILS_CHANGED audit event (last 4 digits only) and notifies every OWNER/ADMIN.
+ */
+export async function changeSellerBankAccount(params: {
+  sellerOrgId: string;
+  actorUserId: string;
+  input: { bankName?: unknown; bankAccountTitle?: unknown; bankIban?: unknown; currentPassword?: unknown };
+  meta?: { ipAddress: string | null; userAgent: string | null };
+}) {
+  const { sellerOrgId, actorUserId, input, meta } = params;
+
+  const membership = await prisma.sellerMembership.findUnique({
+    where: { sellerOrgId_userId: { sellerOrgId, userId: actorUserId } },
+    select: { role: true, isActive: true },
+  });
+  if (!membership?.isActive || !BANK_ADMIN_ROLES.includes(membership.role)) {
+    throw new Error("FORBIDDEN: Only the store owner or an admin can change the payout bank account.");
+  }
+
+  const parsed = bankChangeSchema.safeParse(input);
+  if (!parsed.success) throw new Error(`VALIDATION: ${parsed.error.issues.map((i) => i.message).join(" ")}`);
+  const { bankName, bankAccountTitle, bankIban } = parsed.data;
+  const ibanError = ibanFormatError(bankIban);
+  if (ibanError) throw new Error(`VALIDATION: ${ibanError}`);
+
+  await confirmCurrentPassword(actorUserId, input.currentPassword, meta);
+
+  const encryptedIban = encryptField(bankIban);
+
+  return prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "SellerOrg" WHERE id = ${sellerOrgId} FOR UPDATE`;
+      const org = await tx.sellerOrg.findUnique({
+        where: { id: sellerOrgId },
+        select: { name: true, bankName: true, bankAccountTitle: true, bankIban: true },
+      });
+      if (!org) throw new Error("VALIDATION: Store not found.");
+
+      const previousPlain = readStoredIban(org.bankIban);
+      if (previousPlain === bankIban && org.bankName === bankName && org.bankAccountTitle === bankAccountTitle) {
+        throw new Error("VALIDATION: These are already your payout bank details.");
+      }
+
+      const now = new Date();
+      const holdUntil = new Date(now.getTime() + BANK_CHANGE_HOLD_MS);
+      const previousIbanLast4 = last4(previousPlain);
+      const newIbanLast4 = last4(bankIban);
+
+      await tx.sellerOrg.update({
+        where: { id: sellerOrgId },
+        data: { bankName, bankAccountTitle, bankIban: encryptedIban, bankDetailsChangedAt: now },
+      });
+
+      const change = await tx.bankAccountChange.create({
+        data: {
+          sellerOrgId,
+          actorUserId,
+          bankName,
+          accountTitle: bankAccountTitle,
+          previousIbanLast4,
+          newIbanLast4,
+          ipAddress: meta?.ipAddress ?? null,
+          userAgent: meta?.userAgent ?? null,
+        },
+      });
+
+      // Requests made for the old account must not be paid to the new one
+      const openRequests = await tx.payoutRequest.findMany({
+        where: { sellerOrgId, status: "REQUESTED" },
+        select: { id: true, amountMinor: true },
+      });
+      for (const r of openRequests) {
+        const flipped = await tx.payoutRequest.updateMany({
+          where: { id: r.id, status: "REQUESTED" },
+          data: { status: "REJECTED", decidedAt: now, decisionNote: "Cancelled automatically: the seller changed the payout bank account." },
+        });
+        if (flipped.count > 0) {
+          await tx.auditEvent.create({
+            data: {
+              actorUserId: null,
+              entityType: "PayoutRequest",
+              entityId: r.id,
+              action: "PAYOUT_REJECTED",
+              detailsJson: JSON.stringify({ sellerOrgId, payoutRequestId: r.id, amountMinor: r.amountMinor, reason: "BANK_DETAILS_CHANGED" }),
+            },
+          });
+        }
+      }
+
+      await tx.auditEvent.create({
+        data: {
+          actorUserId,
+          entityType: "SellerOrg",
+          entityId: sellerOrgId,
+          action: "BANK_DETAILS_CHANGED",
+          detailsJson: JSON.stringify({
+            bankAccountChangeId: change.id,
+            bankName,
+            previousIbanLast4,
+            newIbanLast4,
+            accountTitleChanged: org.bankAccountTitle !== bankAccountTitle,
+            payoutHoldUntil: holdUntil.toISOString(),
+            cancelledPayoutRequests: openRequests.length,
+          }),
+          ipAddress: meta?.ipAddress ?? null,
+          userAgent: meta?.userAgent ?? null,
+        },
+      });
+
+      const actor = await tx.user.findUnique({ where: { id: actorUserId }, select: { firstName: true, lastName: true } });
+      const actorName = actor ? `${actor.firstName} ${actor.lastName}`.trim() : "A team member";
+      const admins = await tx.sellerMembership.findMany({
+        where: { sellerOrgId, isActive: true, role: { in: BANK_ADMIN_ROLES } },
+        select: { userId: true },
+      });
+      for (const m of admins) {
+        await tx.notification.create({
+          data: {
+            userId: m.userId,
+            sellerOrgId,
+            title: "Payout bank account changed",
+            message:
+              `${actorName} changed the payout account of ${org.name} to ${bankName} •••• ${newIbanLast4} on ${formatPkTime(now)}. ` +
+              `Payouts are paused until ${formatPkTime(holdUntil)}. If you did not make this change, contact WIZZ.PK support immediately.`,
+            type: "SECURITY",
+            linkUrl: "/seller/portal/profile",
+          },
+        });
+      }
+
+      return {
+        bankName,
+        bankAccountTitle,
+        bankIbanMasked: `•••• ${newIbanLast4}`,
+        bankIbanLast4: newIbanLast4,
+        bankDetailsChangedAt: now,
+        payoutHoldUntil: holdUntil,
+        cancelledPayoutRequests: openRequests.length,
+      };
+    },
+    { maxWait: 10000, timeout: 20000 }
+  );
 }
 
 /**

@@ -62,5 +62,7 @@ export function clientErrorStatus(err: unknown, fallbackStatus = 400) {
   if (raw.startsWith("UNAUTHORIZED")) return 401;
   if (raw.includes("FORBIDDEN")) return 403;
   if (raw.startsWith("INSUFFICIENT_STOCK") || raw.startsWith("ITEM_UNAVAILABLE") || raw.startsWith("IDEMPOTENCY_KEY_CONFLICT")) return 409;
+  // Business-rule refusals are client errors even where the caller's default is 500
+  if (/^(VALIDATION|COUPON_INVALID|COD_LIMIT_EXCEEDED|PAYMENT_METHOD_UNAVAILABLE):/.test(raw)) return 400;
   return fallbackStatus;
 }

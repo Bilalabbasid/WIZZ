@@ -1,17 +1,17 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { clientErrorMessage, clientErrorStatus } from "@/lib/api-error";
 import { registrationSchema, zodFieldErrors } from "@/lib/validation";
 import { prisma } from "@/lib/db";
-import { hashPassword, createSessionToken } from "@/lib/auth";
-import { SITE_CONFIG } from "@/lib/config";
-import { cookies } from "next/headers";
+import { authRequestMeta, hashPassword, issueSessionToken, setSessionCookie } from "@/lib/auth";
 import { claimGuestCart } from "@/lib/cart-session";
+import { sendAccountEmail } from "@/lib/email";
 import { Prisma, UserRole } from "@prisma/client";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRateLimit, clientIpFrom } from "@/lib/rate-limit";
+import { createEmailVerification } from "../_lib/tokens";
 
 export async function POST(req: NextRequest) {
   try {
-    const clientIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown-ip";
+    const clientIp = clientIpFrom(req.headers);
     const limitResult = checkRateLimit(`register_${clientIp}`, { windowMs: 600000, max: 10 });
     if (!limitResult.success) {
       return NextResponse.json(
@@ -54,6 +54,7 @@ export async function POST(req: NextRequest) {
 
     const passwordHash = await hashPassword(password);
 
+    // The address is unverified until the emailed link is opened (shopping isn't blocked).
     const user = await prisma.user.create({
       data: {
         email: cleanEmail,
@@ -62,27 +63,22 @@ export async function POST(req: NextRequest) {
         lastName,
         phone: phone ?? null,
         role: UserRole.CUSTOMER,
-        isEmailVerified: true,
+        isEmailVerified: false,
       },
     });
 
-    const token = await createSessionToken({
-      userId: user.id,
-      email: user.email,
-      role: user.role,
+    const verification = await createEmailVerification(user.id, authRequestMeta(req.headers)).catch((err) => {
+      console.error("[auth] could not create email verification:", err instanceof Error ? err.message : err);
+      return null;
     });
+    if (verification) {
+      after(async () => {
+        await sendAccountEmail(verification);
+      });
+    }
 
-    const cookieStore = await cookies();
-    cookieStore.set(SITE_CONFIG.sessionCookieName, token, {
-      path: "/",
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24 * SITE_CONFIG.sessionExpiryDays,
-    });
-    await claimGuestCart(user.id);
-
-    return NextResponse.json({
+    const token = await issueSessionToken(user, { mfa: false });
+    const res = NextResponse.json({
       success: true,
       user: {
         id: user.id,
@@ -92,6 +88,9 @@ export async function POST(req: NextRequest) {
         role: user.role,
       },
     });
+    setSessionCookie(res, token, user.role);
+    await claimGuestCart(user.id);
+    return res;
   } catch (err: unknown) {
     // Two simultaneous sign-ups with the same email: the unique index wins the race.
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {

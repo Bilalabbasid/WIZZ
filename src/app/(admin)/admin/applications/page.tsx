@@ -21,6 +21,10 @@ export default async function AdminApplicationsPage() {
     contactEmail: a.contactEmail,
     contactPhone: a.contactPhone,
     notes: a.notes,
+    bankName: a.bankName,
+    bankAccountTitle: a.bankAccountTitle,
+    // getAllSellerApplications already masks the IBAN ("•••• 1234")
+    bankIbanMasked: a.bankIban,
     status: a.status,
     reviewerFeedback: a.reviewerFeedback,
     approvedOrgId: a.approvedOrgId,
