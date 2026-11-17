@@ -1,6 +1,7 @@
 import { prisma } from "../src/lib/db";
 import { ProductStatus, ProductModerationStatus } from "@prisma/client";
 import { EXPANSION_CATEGORIES, EXPANSION_REGISTRY } from "./catalog-expansion";
+import { demoVariantPrice } from "./demo-pricing";
 import { CATALOG_PHOTOS } from "./catalog-photos";
 
 export interface SeedProductDef {
@@ -1405,7 +1406,7 @@ Declutter living rooms, wardrobes, and home offices with the **LuminaCraft Stora
 ];
 
 /** Every product in the demo catalog, with photos from the verified photo list. */
-function buildCatalog(): SeedProductDef[] {
+export function buildCatalog(): SeedProductDef[] {
   return [...COMPLETE_CATALOG_REGISTRY, ...EXPANSION_REGISTRY].map((def) => {
     const photos = CATALOG_PHOTOS[def.title];
     if (!photos) return def;
@@ -1640,8 +1641,7 @@ async function main() {
           where: { id: variantId },
           data: {
             title: vDef.title,
-            priceMinor: vDef.priceMinor,
-            compareAtPriceMinor: vDef.compareAtPriceMinor,
+            ...demoVariantPrice(vDef.priceMinor, vDef.compareAtPriceMinor),
             attributesJson: JSON.stringify(vDef.attributes),
             isActive: true,
             dealPriceMinor: null,
@@ -1657,8 +1657,7 @@ async function main() {
             productId,
             title: vDef.title,
             sku: vDef.sku,
-            priceMinor: vDef.priceMinor,
-            compareAtPriceMinor: vDef.compareAtPriceMinor,
+            ...demoVariantPrice(vDef.priceMinor, vDef.compareAtPriceMinor),
             attributesJson: JSON.stringify(vDef.attributes),
             isActive: true,
           },
@@ -1740,4 +1739,7 @@ async function main() {
   console.log("🎉 Complete diverse catalog seeding finished successfully!");
 }
 
-main().finally(() => prisma.$disconnect());
+// Run only when executed directly (other scripts import the demo list from this file)
+if (/seed-complete-diverse-catalog/.test(process.argv[1] ?? "")) {
+  main().finally(() => prisma.$disconnect());
+}

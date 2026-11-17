@@ -14,7 +14,8 @@
     "bootstrap": "tsx scripts/bootstrap-production.ts",
     "seed:catalog": "tsx scripts/seed-complete-diverse-catalog.ts",
     "check:env": "node scripts/check-deploy-env.js",
-    "build:turbo": "next build && node scripts/copy-standalone-assets.js"
+    "build:turbo": "next build && node scripts/copy-standalone-assets.js",
+    "demo-prices": "tsx scripts/apply-demo-prices.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
