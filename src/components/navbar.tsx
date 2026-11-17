@@ -11,7 +11,6 @@ import { getCartToken } from "@/lib/cart-session";
 import { AccountMenu } from "./account-header-sign-out";
 import { MobileNav } from "./mobile-nav";
 import { HeaderSearchOutsideHome, MarketplaceSearch } from "./marketplace-search";
-import { MegaMenu } from "./mega-menu";
 import { WizzLogo } from "./wizz-logo";
 import { MobileDock } from "./mobile-dock";
 import { connection } from "next/server";
@@ -107,9 +106,6 @@ export async function Navbar() {
                 isPlatformAdmin={isPlatformAdmin}
               />
               <WizzLogo size="md" />
-              <nav aria-label="Main" className="hidden xl:flex items-center">
-                <MegaMenu categories={allCategories} />
-              </nav>
             </div>
 
             {/* Search pill (tablet and up; phones get their own row below) */}
