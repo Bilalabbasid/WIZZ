@@ -78,7 +78,7 @@ export function AdminAlert({ tone, children, onDismiss }: { tone: "success" | "e
     <div role={tone === "error" ? "alert" : "status"} aria-live="polite" className={`p-3 rounded-xl text-sm flex items-start justify-between gap-3 border ${cls}`}>
       <div className="min-w-0">{children}</div>
       {onDismiss && (
-        <button type="button" onClick={onDismiss} className="text-[11px] uppercase tracking-wider font-bold opacity-75 hover:opacity-100 shrink-0">
+        <button type="button" onClick={onDismiss} className="text-[11px] font-mono uppercase tracking-[0.06em] font-bold opacity-75 hover:opacity-100 shrink-0">
           Dismiss
         </button>
       )}

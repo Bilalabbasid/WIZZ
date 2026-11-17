@@ -7,8 +7,8 @@ export function AdminPageHeader({ eyebrow, title, description, actions }: { eyeb
   return (
     <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
       <div>
-        <span className="text-xs font-bold text-brand-400 uppercase tracking-wider">{eyebrow}</span>
-        <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white mt-1">{title}</h1>
+        <span className="text-xs font-bold text-brand-400 font-mono uppercase tracking-[0.06em]">{eyebrow}</span>
+        <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-white mt-1">{title}</h1>
         {description && <p className="text-xs text-slate-400 mt-1 max-w-2xl">{description}</p>}
       </div>
       {actions && <div className="flex flex-wrap gap-2">{actions}</div>}

@@ -38,7 +38,7 @@ export default async function SellerDashboardPage() {
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-brand-50 text-brand-700 border border-brand-200 mb-2">
             <span>Merchant Operations</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-semibold text-slate-900 tracking-tight">
             Welcome back, {org.name}
           </h1>
           <p className="text-xs text-slate-500 mt-1">
@@ -69,13 +69,13 @@ export default async function SellerDashboardPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Total GMV */}
         <div className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm space-y-2">
-          <div className="flex items-center justify-between text-slate-500 text-xs font-bold uppercase tracking-wider">
+          <div className="flex items-center justify-between text-slate-500 text-xs font-bold font-mono uppercase tracking-[0.06em]">
             <span>Total Gross GMV</span>
             <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
               <TrendingUp size={16} />
             </div>
           </div>
-          <div className="text-2xl font-black text-slate-900 tracking-tight">
+          <div className="text-2xl font-semibold text-slate-900 tracking-tight">
             {formatPkr(stats.totalGmvMinor)}
           </div>
           <p className="text-[11px] text-slate-400">
@@ -85,13 +85,13 @@ export default async function SellerDashboardPage() {
 
         {/* Total Orders */}
         <div className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm space-y-2">
-          <div className="flex items-center justify-between text-slate-500 text-xs font-bold uppercase tracking-wider">
+          <div className="flex items-center justify-between text-slate-500 text-xs font-bold font-mono uppercase tracking-[0.06em]">
             <span>Total Orders</span>
             <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
               <PackageOpen size={16} />
             </div>
           </div>
-          <div className="text-2xl font-black text-slate-900 tracking-tight">
+          <div className="text-2xl font-semibold text-slate-900 tracking-tight">
             {stats.ordersCount}
           </div>
           <p className="text-[11px] text-slate-400">
@@ -101,13 +101,13 @@ export default async function SellerDashboardPage() {
 
         {/* Active Products */}
         <div className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm space-y-2">
-          <div className="flex items-center justify-between text-slate-500 text-xs font-bold uppercase tracking-wider">
+          <div className="flex items-center justify-between text-slate-500 text-xs font-bold font-mono uppercase tracking-[0.06em]">
             <span>Catalog Items</span>
             <div className="w-8 h-8 rounded-xl bg-brand-50 text-brand-600 flex items-center justify-center">
               <Layers size={16} />
             </div>
           </div>
-          <div className="text-2xl font-black text-slate-900 tracking-tight">
+          <div className="text-2xl font-semibold text-slate-900 tracking-tight">
             {stats.productsCount}
           </div>
           <p className="text-[11px] text-slate-400">
@@ -117,13 +117,13 @@ export default async function SellerDashboardPage() {
 
         {/* Low Stock Alerts */}
         <div className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm space-y-2">
-          <div className="flex items-center justify-between text-slate-500 text-xs font-bold uppercase tracking-wider">
+          <div className="flex items-center justify-between text-slate-500 text-xs font-bold font-mono uppercase tracking-[0.06em]">
             <span>Low Stock SKUs</span>
             <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
               <AlertTriangle size={16} />
             </div>
           </div>
-          <div className="text-2xl font-black text-slate-900 tracking-tight">
+          <div className="text-2xl font-semibold text-slate-900 tracking-tight">
             {stats.lowStockCount}
           </div>
           <p className="text-[11px] text-slate-400">
@@ -158,7 +158,7 @@ export default async function SellerDashboardPage() {
           ) : (
             <div className="divide-y divide-slate-100 overflow-x-auto">
               <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50/70 text-slate-500 font-bold uppercase tracking-wider">
+                <thead className="bg-slate-50/70 text-slate-500 font-bold font-mono uppercase tracking-[0.06em]">
                   <tr>
                     <th className="py-3 px-6">Package #</th>
                     <th className="py-3 px-4">Master Order</th>
@@ -251,7 +251,7 @@ export default async function SellerDashboardPage() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <span className="font-black text-rose-600">{a.availableUnits} left</span>
+                      <span className="font-semibold text-rose-600">{a.availableUnits} left</span>
                       <div className="text-[10px] text-slate-400">Min: {a.lowStockThreshold}</div>
                     </div>
                   </div>
@@ -262,7 +262,7 @@ export default async function SellerDashboardPage() {
 
           {/* Quick Operations Links */}
           <div className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm space-y-3">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+            <h3 className="text-xs font-bold font-mono uppercase tracking-[0.06em] text-slate-500">
               Fulfillment Workflows
             </h3>
             <div className="space-y-2 text-xs">

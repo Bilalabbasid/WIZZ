@@ -206,7 +206,7 @@ export function AdminProductsView({
 
               <div className="flex items-center gap-4 text-right self-end md:self-auto">
                 <div>
-                  <span className="font-black text-white text-sm">
+                  <span className="font-semibold text-white text-sm">
                     {formatCurrency(mainVariant?.priceMinor || 0)}
                   </span>
                   <p className="text-[11px] text-slate-400">{p.variants.length} variant(s)</p>

@@ -46,10 +46,10 @@ export default async function AdminApplicationsPage() {
   return (
     <div className="space-y-8">
       <div>
-        <span className="text-xs font-bold text-brand-400 uppercase tracking-wider">
+        <span className="text-xs font-bold text-brand-400 font-mono uppercase tracking-[0.06em]">
           Compliance & Onboarding
         </span>
-        <h1 className="text-3xl font-black tracking-tight text-white mt-1">
+        <h1 className="text-3xl font-semibold tracking-tight text-white mt-1">
           Seller Applications Review
         </h1>
         <p className="text-xs text-slate-400 mt-1">

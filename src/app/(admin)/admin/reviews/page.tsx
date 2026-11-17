@@ -16,7 +16,7 @@ export default async function AdminReviewsPage() {
             <Star size={20} />
           </div>
           <div>
-            <h1 className="text-2xl font-black text-white tracking-tight">
+            <h1 className="text-2xl font-semibold text-white tracking-tight">
               Customer Reviews & Moderation
             </h1>
             <p className="text-xs text-slate-400 mt-0.5">

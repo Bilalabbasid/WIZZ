@@ -59,7 +59,7 @@ export default function SellerNotificationsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+          <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">
             Notification Center
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">

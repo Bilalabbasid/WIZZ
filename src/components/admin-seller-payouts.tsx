@@ -173,7 +173,7 @@ export function AdminSellerPayouts({
         {cards.map((c) => (
           <div key={c.label} className="p-3 rounded-xl bg-slate-950 border border-slate-800">
             <dt className={`text-[11px] font-semibold ${c.tone ?? "text-slate-400"}`}>{c.label}</dt>
-            <dd className={`text-lg font-black tabular-nums ${c.value < 0 ? "text-rose-300" : "text-white"}`}>{formatCurrency(c.value)}</dd>
+            <dd className={`text-lg font-semibold tabular-nums ${c.value < 0 ? "text-rose-300" : "text-white"}`}>{formatCurrency(c.value)}</dd>
             {c.note && <dd className="text-[10px] text-amber-300">{c.note}</dd>}
           </div>
         ))}

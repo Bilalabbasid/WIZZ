@@ -48,7 +48,7 @@ export default async function SellerHubPage() {
             <Store size={14} />
             <span>WIZZ.PK Merchant Network</span>
           </div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight">
+          <h1 className="text-3xl font-semibold text-slate-900 tracking-tight">
             Seller Portal Hub
           </h1>
           <p className="text-sm text-slate-600 mt-1">
@@ -110,7 +110,7 @@ export default async function SellerHubPage() {
                 <h2 className="text-base font-bold text-slate-900">
                   {application.tradingName || application.legalBusinessName}
                 </h2>
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200">
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono uppercase tracking-[0.06em] bg-slate-100 text-slate-700 border border-slate-200">
                   {application.status.replace("_", " ")}
                 </span>
               </div>
@@ -155,7 +155,7 @@ export default async function SellerHubPage() {
           <div className="bg-white rounded-3xl p-8 border border-slate-200/80 shadow-sm space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-black text-lg">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-semibold text-lg">
                   <ShieldCheck size={26} />
                 </div>
                 <div>
@@ -163,7 +163,7 @@ export default async function SellerHubPage() {
                     <h2 className="text-lg font-bold text-slate-900">
                       {application.tradingName || application.legalBusinessName}
                     </h2>
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono uppercase tracking-[0.06em] bg-emerald-50 text-emerald-700 border border-emerald-200">
                       Verified Seller
                     </span>
                   </div>
@@ -185,11 +185,11 @@ export default async function SellerHubPage() {
 
           {/* Stage 1 Rollout Notice Card */}
           <div className="bg-gradient-to-br from-slate-900 to-brand-950 text-white rounded-3xl p-8 border border-slate-800 shadow-md space-y-4">
-            <div className="flex items-center gap-2 text-brand-400 text-xs font-bold uppercase tracking-wider">
+            <div className="flex items-center gap-2 text-brand-400 text-xs font-bold font-mono uppercase tracking-[0.06em]">
               <Lock size={14} />
               <span>Architecture Notice &bull; Stage 1 Boundary</span>
             </div>
-            <h3 className="text-xl font-black tracking-tight text-white">
+            <h3 className="text-xl font-semibold tracking-tight text-white">
               Self-Serve Portal Gated under Stage 1 Rollout Flag
             </h3>
             <p className="text-xs text-slate-300 leading-relaxed max-w-3xl">

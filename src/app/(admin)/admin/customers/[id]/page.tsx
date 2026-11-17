@@ -27,8 +27,8 @@ export default async function AdminCustomerDetailPage({ params }: { params: Prom
 
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
         <div>
-          <span className="text-xs font-bold text-brand-400 uppercase tracking-wider">Customer profile</span>
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white mt-1">
+          <span className="text-xs font-bold text-brand-400 font-mono uppercase tracking-[0.06em]">Customer profile</span>
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-white mt-1">
             {customer.firstName} {customer.lastName}
           </h1>
           <p className="text-xs text-slate-400 mt-1">
@@ -49,7 +49,7 @@ export default async function AdminCustomerDetailPage({ params }: { params: Prom
         ].map(([label, value]) => (
           <div key={label} className={`${adminCardCls} p-4`}>
             <dt className="text-[11px] font-semibold text-slate-400">{label}</dt>
-            <dd className="text-lg font-black text-white tabular-nums mt-1">{value}</dd>
+            <dd className="text-lg font-semibold text-white tabular-nums mt-1">{value}</dd>
           </div>
         ))}
       </dl>

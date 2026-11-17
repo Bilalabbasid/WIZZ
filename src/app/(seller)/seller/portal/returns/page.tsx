@@ -97,7 +97,7 @@ export default function SellerReturnsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+          <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">
             Returns & Disputes Inspection
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
@@ -200,7 +200,7 @@ export default function SellerReturnsPage() {
             {/* Desktop Table (Viewports >= md) */}
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider">
+                <thead className="bg-slate-50 text-slate-500 font-bold font-mono uppercase tracking-[0.06em]">
                   <tr>
                     <th className="py-3 px-6">Return Request #</th>
                     <th className="py-3 px-4">Package #</th>
@@ -295,7 +295,7 @@ export default function SellerReturnsPage() {
                 </p>
               ) : (
               <div>
-                <span className="block font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                <span className="block font-semibold font-mono uppercase tracking-[0.06em] text-slate-700 mb-1.5">
                   Decision
                 </span>
                 <div className="grid grid-cols-2 gap-3">
@@ -331,7 +331,7 @@ export default function SellerReturnsPage() {
               )}
 
               <div>
-                <label htmlFor="inspection-note" className="block font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                <label htmlFor="inspection-note" className="block font-semibold font-mono uppercase tracking-[0.06em] text-slate-700 mb-1.5">
                   {decision === "REJECTED" ? "Reason (shown to the customer)" : "Notes (optional)"}
                 </label>
                 <textarea

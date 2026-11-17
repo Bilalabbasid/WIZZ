@@ -5,6 +5,7 @@ import type { Metadata } from "next";
 import { ArrowLeft } from "lucide-react";
 import { AdminNav, type AdminNavItem } from "@/components/admin-nav";
 import { ALL_ADMIN_ROLES, canAccessSection, formatRole, type AdminSection } from "@/modules/admin/access";
+import { WizzLogo } from "@/components/wizz-logo";
 
 export const metadata: Metadata = {
   title: "Admin",
@@ -52,16 +53,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       <aside className="w-full md:w-64 bg-slate-950 border-b md:border-b-0 md:border-r border-slate-800/80 p-3 md:p-5 flex flex-col md:justify-between flex-shrink-0 md:sticky md:top-0 md:h-screen md:overflow-y-auto">
         <div className="space-y-3 md:space-y-6">
           <div className="flex items-center justify-between gap-3 px-1 md:px-2">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center text-white font-black text-sm" aria-hidden="true">
-                W
-              </div>
-              <div>
-                <span className="font-extrabold text-base tracking-tight text-white">
-                  WIZZ<span className="text-brand-400">.PK</span>
-                </span>
-                <span className="block text-[10px] font-semibold text-emerald-400 tracking-wider uppercase">Admin Console</span>
-              </div>
+            <div className="flex items-center gap-2.5">
+              <WizzLogo size="sm" theme="light" href="/admin" />
+              <span className="font-mono text-[10px] uppercase tracking-[0.06em] text-volt">Admin</span>
             </div>
             <div className="md:hidden text-right text-[10px] leading-tight">
               <p className="text-slate-300 font-semibold truncate max-w-[45vw]">{user.email}</p>

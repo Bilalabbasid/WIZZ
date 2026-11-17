@@ -129,7 +129,7 @@ export default function SellerTeamPage() {
     <div className="max-w-4xl mx-auto space-y-8">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+        <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">
           Seller Team & Role Permissions
         </h1>
         <p className="text-xs text-slate-500 mt-0.5">
@@ -155,7 +155,7 @@ export default function SellerTeamPage() {
       <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/90 shadow-sm space-y-4">
         <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
           <UserPlus size={16} className="text-brand-600" />
-          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+          <h2 className="text-xs font-bold font-mono uppercase tracking-[0.06em] text-slate-800">
             Invite Organization Collaborator
           </h2>
         </div>
@@ -173,7 +173,7 @@ export default function SellerTeamPage() {
           </div>
 
           <div className="w-full sm:w-56">
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+            <label className="block text-xs font-semibold font-mono uppercase tracking-[0.06em] text-slate-700 mb-1.5">
               Assigned Role
             </label>
             <select

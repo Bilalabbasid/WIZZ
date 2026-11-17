@@ -68,7 +68,7 @@ export default function SellerShipmentsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+          <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">
             Shipment Waybill Tracking
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
@@ -143,7 +143,7 @@ export default function SellerShipmentsPage() {
             {/* Desktop Table (Viewports >= md) */}
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider">
+                <thead className="bg-slate-50 text-slate-500 font-bold font-mono uppercase tracking-[0.06em]">
                   <tr>
                     <th className="py-3 px-6">Tracking Airway Bill</th>
                     <th className="py-3 px-4">Courier Partner</th>

@@ -21,6 +21,7 @@ import {
   Layers,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { WizzLogo } from "@/components/wizz-logo";
 
 export default async function SellerPortalLayout({
   children,
@@ -61,14 +62,8 @@ export default async function SellerPortalLayout({
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <Link href="/seller" className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-slate-900 text-white flex items-center justify-center font-black text-sm tracking-wider">
-                W
-              </div>
-              <span className="font-black text-slate-900 tracking-tight text-lg">
-                WIZZ<span className="text-brand-600">.PK</span>
-              </span>
-            </Link>
+            <WizzLogo size="sm" href="/seller" />
+            <span className="hidden sm:inline font-mono text-[11px] uppercase tracking-[0.06em] text-slate-500">Seller Center</span>
             <span className="text-slate-300">/</span>
             <div className="flex items-center gap-2">
               <span className="font-bold text-xs text-slate-800">{org.name}</span>

@@ -95,7 +95,7 @@ export function AdminReviewsView({ initialReviews }: { initialReviews: ReviewIte
           <span>{toast.message}</span>
           <button
             onClick={() => setToast(null)}
-            className="text-xs uppercase tracking-wider font-bold opacity-75 hover:opacity-100"
+            className="text-xs font-mono uppercase tracking-[0.06em] font-bold opacity-75 hover:opacity-100"
           >
             Dismiss
           </button>

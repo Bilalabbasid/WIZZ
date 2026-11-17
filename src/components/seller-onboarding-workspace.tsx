@@ -183,7 +183,7 @@ export function SellerOnboardingWorkspace({
               <Store size={22} />
             </div>
             <div>
-              <h2 className="text-xl font-black text-slate-900">
+              <h2 className="text-xl font-semibold text-slate-900">
                 Seller Onboarding Workspace
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
@@ -445,7 +445,7 @@ export function SellerOnboardingWorkspace({
             </div>
 
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+              <label className="block text-xs font-semibold font-mono uppercase tracking-[0.06em] text-slate-700 mb-1.5">
                 Merchant Operations Overview & Product Catalog Summary
               </label>
               <textarea
@@ -555,7 +555,7 @@ export function SellerOnboardingWorkspace({
           {/* Uploaded Documents List */}
           {app.documents && app.documents.length > 0 && (
             <div className="pt-2">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">
+              <h4 className="text-xs font-bold font-mono uppercase tracking-[0.06em] text-slate-600 mb-2">
                 Attached Documents ({app.documents.length})
               </h4>
               <div className="space-y-2">

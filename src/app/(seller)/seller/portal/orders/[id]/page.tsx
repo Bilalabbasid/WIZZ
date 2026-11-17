@@ -218,7 +218,7 @@ export default function SellerOrderDetailPage({
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+          <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">
             Package #{order.sellerOrderNumber}
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
@@ -308,7 +308,7 @@ export default function SellerOrderDetailPage({
           </div>
           <div>
             <span className="text-slate-500">Net Seller Payable:</span>
-            <div className="font-black text-emerald-700 text-base">
+            <div className="font-semibold text-emerald-700 text-base">
               {formatPkr(order.netSellerPayableMinor)}
             </div>
           </div>
@@ -321,7 +321,7 @@ export default function SellerOrderDetailPage({
         <div className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm space-y-4">
           <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
             <MapPin size={16} className="text-brand-600" />
-            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+            <h2 className="text-xs font-bold font-mono uppercase tracking-[0.06em] text-slate-800">
               Destination Delivery Address
             </h2>
           </div>
@@ -345,7 +345,7 @@ export default function SellerOrderDetailPage({
         <div className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm space-y-4">
           <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
             <PackageOpen size={16} className="text-brand-600" />
-            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+            <h2 className="text-xs font-bold font-mono uppercase tracking-[0.06em] text-slate-800">
               Update Packing Status
             </h2>
           </div>
@@ -466,7 +466,7 @@ export default function SellerOrderDetailPage({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                <label className="block text-xs font-semibold font-mono uppercase tracking-[0.06em] text-slate-700 mb-1.5">
                   Courier Carrier
                 </label>
                 <select

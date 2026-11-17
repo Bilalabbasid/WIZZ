@@ -182,8 +182,8 @@ export default async function AdminDashboardPage({
   return (
     <div className="space-y-10">
       <div>
-        <span className="text-xs font-bold text-brand-400 uppercase tracking-wider">Platform Operations</span>
-        <h1 className="text-3xl font-black tracking-tight text-white mt-1">WIZZ.PK Overview</h1>
+        <span className="text-xs font-bold text-brand-400 font-mono uppercase tracking-[0.06em]">Platform Operations</span>
+        <h1 className="text-3xl font-semibold tracking-tight text-white mt-1">WIZZ.PK Overview</h1>
         <p className="text-xs text-slate-400 mt-1">Live counts from the database. Select a tile to open its queue.</p>
       </div>
 
@@ -205,7 +205,7 @@ export default async function AdminDashboardPage({
                   <Icon size={16} aria-hidden="true" />
                 </span>
               </div>
-              <p className="text-2xl font-black text-white tabular-nums">{t.value}</p>
+              <p className="text-2xl font-semibold text-white tabular-nums">{t.value}</p>
               <p className="text-[11px] text-slate-400">{t.hint}</p>
             </>
           );
@@ -251,7 +251,7 @@ export default async function AdminDashboardPage({
                       <Badge variant={o.status === "DELIVERED" ? "success" : o.status === "CANCELLED" ? "danger" : "default"} size="sm">
                         {o.status.replace(/_/g, " ")}
                       </Badge>
-                      <span className="font-black text-white tabular-nums">{formatCurrency(o.totalMinor)}</span>
+                      <span className="font-semibold text-white tabular-nums">{formatCurrency(o.totalMinor)}</span>
                     </div>
                   </div>
                 ))

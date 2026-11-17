@@ -54,16 +54,16 @@ export default function SellerRegisterPage() {
     <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-2xl text-center space-y-3">
         <Link href="/" className="inline-flex items-center gap-2">
-          <div className="w-10 h-10 rounded-2xl bg-slate-900 text-white flex items-center justify-center font-black text-lg tracking-wider shadow-sm">
+          <div className="w-10 h-10 rounded-2xl bg-slate-900 text-white flex items-center justify-center font-semibold text-lg tracking-wider shadow-sm">
             W
           </div>
-          <span className="text-2xl font-black text-slate-900 tracking-tight">WIZZ.PK</span>
+          <span className="text-2xl font-semibold text-slate-900 tracking-tight">WIZZ.PK</span>
         </Link>
         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
           <Store size={14} />
           <span>Merchant Network Registration</span>
         </div>
-        <h1 className="text-3xl font-black text-slate-900 tracking-tight">
+        <h1 className="text-3xl font-semibold text-slate-900 tracking-tight">
           Start Selling on WIZZ.PK
         </h1>
         <p className="text-sm text-slate-600 max-w-md mx-auto">
@@ -85,7 +85,7 @@ export default function SellerRegisterPage() {
             <div className="space-y-4">
               <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
                 <Building2 size={16} className="text-brand-600" />
-                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                <h2 className="text-xs font-bold font-mono uppercase tracking-[0.06em] text-slate-800">
                   Store & Business Identity
                 </h2>
               </div>
@@ -108,7 +108,7 @@ export default function SellerRegisterPage() {
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                  <label className="block text-xs font-semibold font-mono uppercase tracking-[0.06em] text-slate-700 mb-1.5">
                     Hub / City
                   </label>
                   <select
@@ -142,7 +142,7 @@ export default function SellerRegisterPage() {
             <div className="space-y-4 pt-2">
               <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
                 <UserCheck size={16} className="text-brand-600" />
-                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                <h2 className="text-xs font-bold font-mono uppercase tracking-[0.06em] text-slate-800">
                   Primary Merchant Account Login
                 </h2>
               </div>

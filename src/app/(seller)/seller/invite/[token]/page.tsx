@@ -30,7 +30,7 @@ export default async function SellerInvitePage({ params }: { params: Promise<{ t
 
         {!invitation ? (
           <>
-            <h1 className="text-xl font-black text-slate-900">Invitation not available</h1>
+            <h1 className="text-xl font-semibold text-slate-900">Invitation not available</h1>
             <p className="text-slate-600">
               This invitation link is invalid, was revoked, or has expired. Ask the store owner to send a new one.
             </p>
@@ -40,7 +40,7 @@ export default async function SellerInvitePage({ params }: { params: Promise<{ t
           </>
         ) : (
           <>
-            <h1 className="text-xl font-black text-slate-900">Join {invitation.sellerOrg.name}</h1>
+            <h1 className="text-xl font-semibold text-slate-900">Join {invitation.sellerOrg.name}</h1>
             <p className="text-slate-600">
               You have been invited to the <strong>{invitation.sellerOrg.name}</strong> seller team as{" "}
               <strong>{ROLE_LABELS[invitation.role] || invitation.role}</strong>.

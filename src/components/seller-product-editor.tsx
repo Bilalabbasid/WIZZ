@@ -884,7 +884,7 @@ export function SellerProductEditor({ initialProductId, createdNotice }: SellerP
           </Link>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-lg font-black text-slate-900 tracking-tight truncate max-w-md">
+              <h1 className="text-lg font-semibold text-slate-900 tracking-tight truncate max-w-md">
                 {title || (initialProductId ? "Edit Listing" : "Create New Product")}
               </h1>
               {/* Listing status */}
@@ -1303,7 +1303,7 @@ export function SellerProductEditor({ initialProductId, createdNotice }: SellerP
                     <div className="relative aspect-square rounded-xl overflow-hidden bg-white border border-slate-100 flex items-center justify-center">
                       <img src={img.url} alt={img.altText} className="object-cover w-full h-full" />
                       {img.isThumbnail && (
-                        <span className="absolute top-2 left-2 bg-brand-600 text-white text-[10px] font-black uppercase px-2 py-0.5 rounded-md shadow-sm">
+                        <span className="absolute top-2 left-2 bg-brand-600 text-white text-[10px] font-semibold uppercase px-2 py-0.5 rounded-md shadow-sm">
                           Primary
                         </span>
                       )}
@@ -1934,16 +1934,16 @@ export function SellerProductEditor({ initialProductId, createdNotice }: SellerP
 
                 {/* Details */}
                 <div className="space-y-4">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-md">
+                  <span className="text-[10px] font-semibold font-mono uppercase tracking-[0.06em] text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-md">
                     Verified Merchant Listing
                   </span>
 
-                  <h2 className="text-xl font-black text-slate-900 leading-tight">
+                  <h2 className="text-xl font-semibold text-slate-900 leading-tight">
                     {title || "Untitled Product"}
                   </h2>
 
                   <div className="flex items-baseline gap-2">
-                    <span className="text-2xl font-black text-slate-900">
+                    <span className="text-2xl font-semibold text-slate-900">
                       {formatPkr(Math.round((variants[0]?.pricePkr || 2499) * 100))}
                     </span>
                     {variants[0]?.compareAtPricePkr && (

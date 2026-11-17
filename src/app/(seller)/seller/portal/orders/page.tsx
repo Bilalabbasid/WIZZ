@@ -55,7 +55,7 @@ export default function SellerOrdersPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+          <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">
             Orders & Package Fulfillment
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
@@ -149,7 +149,7 @@ export default function SellerOrdersPage() {
             {/* Desktop Table (Viewports >= md) */}
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider">
+                <thead className="bg-slate-50 text-slate-500 font-bold font-mono uppercase tracking-[0.06em]">
                   <tr>
                     <th className="py-3 px-6">Seller Package #</th>
                     <th className="py-3 px-4">Master Order</th>

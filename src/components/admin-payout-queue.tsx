@@ -30,7 +30,7 @@ export function AdminPayoutQueue({ requests, currentUserId }: { requests: AdminP
               </div>
               <PayoutStatusBadge status={r.status} />
             </div>
-            <p className="text-lg font-black text-white tabular-nums">{formatCurrency(r.amountMinor)}</p>
+            <p className="text-lg font-semibold text-white tabular-nums">{formatCurrency(r.amountMinor)}</p>
             <p className="text-slate-300">{r.bankName ?? "Bank"} · <span className="font-mono">•••• {r.bankIbanLast4 ?? "????"}</span></p>
             {r.bankReference && <p className="font-mono text-slate-300 break-all">Ref {r.bankReference}</p>}
             {r.decisionNote && <p className="text-amber-300">{r.decisionNote}</p>}

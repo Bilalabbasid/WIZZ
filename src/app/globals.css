@@ -33,6 +33,50 @@
   /* Photo placeholder tones */
   --color-sand: #e4dfd6;
 
+  /* Brand neutrals replace Tailwind's cool "slate" everywhere (seller center, admin, forms),
+     so older slate-* classes render in the brand's warm grays. 500 and darker keep ≥4.5:1
+     contrast on white for small text. */
+  --color-slate-50: #fafaf7;
+  --color-slate-100: #f5f5f2;
+  --color-slate-200: #e6e6e0;
+  --color-slate-300: #cfcfc8;
+  --color-slate-400: #a3a39c;
+  --color-slate-500: #6f6f68;
+  --color-slate-600: #5f5f59;
+  --color-slate-700: #3a3a37;
+  --color-slate-800: #2a2a27;
+  --color-slate-900: #1a1a18;
+  --color-slate-950: #0e0e0d;
+
+  /* Success / positive states use the brand: volt tints for surfaces, ink for text and icons
+     (Tailwind "emerald" classes across the app map here; errors stay rose). */
+  --color-emerald-50: #f6ffdc;
+  --color-emerald-100: #ecffb0;
+  --color-emerald-200: #ddf58a;
+  --color-emerald-300: #cdee5c;
+  --color-emerald-400: #c4f025;
+  --color-emerald-500: #d4ff3a;
+  --color-emerald-600: #2a2a27;
+  --color-emerald-700: #1a1a18;
+  --color-emerald-800: #0e0e0d;
+  --color-emerald-900: #0e0e0d;
+  --color-emerald-950: #0e0e0d;
+
+  /* Info states (rare): neutral ink on canvas instead of sky blue */
+  --color-sky-50: #f5f5f2;
+  --color-sky-100: #eeeee9;
+  --color-sky-200: #deded8;
+  --color-sky-500: #5f5f59;
+  --color-sky-600: #3a3a37;
+  --color-sky-700: #2a2a27;
+  --color-sky-800: #1a1a18;
+
+  --color-blue-50: #f5f5f2;
+  --color-blue-100: #eeeee9;
+  --color-blue-600: #2a2a27;
+  --color-blue-700: #1a1a18;
+  --color-blue-800: #0e0e0d;
+
   /* Volt: the single accent. Small badges, the logo dot, the Sell / cart dock button */
   --color-volt: #d4ff3a;
   --color-volt-soft: #ecffb0;

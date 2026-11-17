@@ -170,7 +170,7 @@ export default function SellerProfilePage() {
     <div className="max-w-4xl mx-auto space-y-8">
       {/* Title */}
       <div>
-        <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+        <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">
           Store Profile & Settings
         </h1>
         <p className="text-xs text-slate-500 mt-1">
@@ -208,7 +208,7 @@ export default function SellerProfilePage() {
               onChange={(e) => setProfile({ ...profile, name: e.target.value })}
             />
             <div>
-              <label htmlFor="merchant-slug" className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+              <label htmlFor="merchant-slug" className="block text-xs font-semibold font-mono uppercase tracking-[0.06em] text-slate-700 mb-1.5">
                 Merchant Slug Identifier
               </label>
               <input
@@ -253,7 +253,7 @@ export default function SellerProfilePage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
-              <label htmlFor="hub-city" className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+              <label htmlFor="hub-city" className="block text-xs font-semibold font-mono uppercase tracking-[0.06em] text-slate-700 mb-1.5">
                 Hub / City
               </label>
               <select
@@ -323,15 +323,15 @@ export default function SellerProfilePage() {
 
         <dl className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
           <div>
-            <dt className="text-slate-500 font-semibold uppercase tracking-wider text-[10px]">Bank</dt>
+            <dt className="text-slate-500 font-semibold font-mono uppercase tracking-[0.06em] text-[10px]">Bank</dt>
             <dd className="text-slate-900 font-bold mt-0.5">{bank?.bankName || "Not set"}</dd>
           </div>
           <div>
-            <dt className="text-slate-500 font-semibold uppercase tracking-wider text-[10px]">Account title</dt>
+            <dt className="text-slate-500 font-semibold font-mono uppercase tracking-[0.06em] text-[10px]">Account title</dt>
             <dd className="text-slate-900 font-bold mt-0.5">{bank?.bankAccountTitle || "Not set"}</dd>
           </div>
           <div>
-            <dt className="text-slate-500 font-semibold uppercase tracking-wider text-[10px]">IBAN</dt>
+            <dt className="text-slate-500 font-semibold font-mono uppercase tracking-[0.06em] text-[10px]">IBAN</dt>
             <dd className="text-slate-900 font-bold font-mono mt-0.5">{bank?.bankIbanMasked || "Not set"}</dd>
           </div>
         </dl>
@@ -416,7 +416,7 @@ export default function SellerProfilePage() {
             <div className="overflow-x-auto rounded-2xl border border-slate-200">
               <table className="w-full text-left text-xs">
                 <caption className="sr-only">Payout bank account change history</caption>
-                <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
+                <thead className="bg-slate-50 text-slate-500 font-bold font-mono uppercase tracking-[0.06em] text-[10px]">
                   <tr>
                     <th scope="col" className="py-2 px-3">Date</th>
                     <th scope="col" className="py-2 px-3">Changed by</th>

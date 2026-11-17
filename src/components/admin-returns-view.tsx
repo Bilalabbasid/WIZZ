@@ -295,7 +295,7 @@ export function AdminReturnsView({
                 <tfoot>
                   <tr className="border-t border-slate-800">
                     <td className="px-3 py-2 font-bold text-slate-300" colSpan={2}>Total (line price × qty minus discount share)</td>
-                    <td className="px-3 py-2 text-right font-black text-white tabular-nums">{formatCurrency(selected.valueMinor)}</td>
+                    <td className="px-3 py-2 text-right font-semibold text-white tabular-nums">{formatCurrency(selected.valueMinor)}</td>
                   </tr>
                 </tfoot>
               </table>

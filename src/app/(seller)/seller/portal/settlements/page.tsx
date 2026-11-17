@@ -117,7 +117,7 @@ export default function SellerSettlementsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+          <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">
             Commission & Settlement Ledgers
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
@@ -141,8 +141,8 @@ export default function SellerSettlementsPage() {
       {/* Balance overview (same figures WIZZ.PK finance sees) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white p-5 rounded-3xl border border-emerald-200 shadow-sm space-y-1 bg-emerald-50/20">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-800 block">Available balance</span>
-          <div className={`text-2xl font-black tracking-tight ${balances.availableMinor < 0 ? "text-rose-600" : "text-emerald-700"}`}>
+          <span className="text-[11px] font-bold font-mono uppercase tracking-[0.06em] text-emerald-800 block">Available balance</span>
+          <div className={`text-2xl font-semibold tracking-tight ${balances.availableMinor < 0 ? "text-rose-600" : "text-emerald-700"}`}>
             {formatPkr(balances.availableMinor)}
           </div>
           <span className="text-[11px] text-emerald-700">
@@ -150,20 +150,20 @@ export default function SellerSettlementsPage() {
           </span>
         </div>
         <div className="bg-white p-5 rounded-3xl border border-slate-200/90 shadow-sm space-y-1">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">Being transferred</span>
-          <div className="text-2xl font-black text-slate-900 tracking-tight">{formatPkr(balances.reservedMinor)}</div>
+          <span className="text-[11px] font-bold font-mono uppercase tracking-[0.06em] text-slate-500 block">Being transferred</span>
+          <div className="text-2xl font-semibold text-slate-900 tracking-tight">{formatPkr(balances.reservedMinor)}</div>
           <span className="text-[11px] text-slate-400">Scheduled payouts</span>
         </div>
         <div className="bg-white p-5 rounded-3xl border border-slate-200/90 shadow-sm space-y-1">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">In escrow</span>
-          <div className="text-2xl font-black text-slate-900 tracking-tight">{formatPkr(balances.inEscrowMinor + balances.pendingMinor)}</div>
+          <span className="text-[11px] font-bold font-mono uppercase tracking-[0.06em] text-slate-500 block">In escrow</span>
+          <div className="text-2xl font-semibold text-slate-900 tracking-tight">{formatPkr(balances.inEscrowMinor + balances.pendingMinor)}</div>
           <span className="text-[11px] text-slate-400">
             Paid, not yet delivered{balances.heldMinor ? ` · ${formatPkr(balances.heldMinor)} on hold` : ""}
           </span>
         </div>
         <div className="bg-white p-5 rounded-3xl border border-slate-200/90 shadow-sm space-y-1">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">Paid to you</span>
-          <div className="text-2xl font-black text-slate-900 tracking-tight">{formatPkr(balances.paidOutMinor - balances.reversedPayoutsMinor)}</div>
+          <span className="text-[11px] font-bold font-mono uppercase tracking-[0.06em] text-slate-500 block">Paid to you</span>
+          <div className="text-2xl font-semibold text-slate-900 tracking-tight">{formatPkr(balances.paidOutMinor - balances.reversedPayoutsMinor)}</div>
           <span className="text-[11px] text-slate-400">All-time bank transfers</span>
         </div>
       </div>
@@ -218,7 +218,7 @@ export default function SellerSettlementsPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs min-w-[560px]">
               <caption className="sr-only">Payout history</caption>
-              <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider">
+              <thead className="bg-slate-50 text-slate-500 font-bold font-mono uppercase tracking-[0.06em]">
                 <tr>
                   <th scope="col" className="py-3 px-6">Date</th>
                   <th scope="col" className="py-3 px-4">Amount</th>
@@ -248,23 +248,23 @@ export default function SellerSettlementsPage() {
       {/* Sales totals */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm space-y-2">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-500 block">Total Gross GMV</span>
-          <div className="text-2xl font-black text-slate-900 tracking-tight">{formatPkr(summary.totalGrossGmvMinor)}</div>
+          <span className="text-xs font-bold font-mono uppercase tracking-[0.06em] text-slate-500 block">Total Gross GMV</span>
+          <div className="text-2xl font-semibold text-slate-900 tracking-tight">{formatPkr(summary.totalGrossGmvMinor)}</div>
           <span className="text-[11px] text-slate-400">{summary.orderCount} packages</span>
         </div>
         <div className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm space-y-2">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-500 block">Platform Fee ({sellerOrg.commissionRatePercent}%)</span>
-          <div className="text-2xl font-black text-rose-600 tracking-tight">-{formatPkr(summary.totalPlatformCommissionMinor)}</div>
+          <span className="text-xs font-bold font-mono uppercase tracking-[0.06em] text-slate-500 block">Platform Fee ({sellerOrg.commissionRatePercent}%)</span>
+          <div className="text-2xl font-semibold text-rose-600 tracking-tight">-{formatPkr(summary.totalPlatformCommissionMinor)}</div>
           <span className="text-[11px] text-slate-400">Marketplace commission</span>
         </div>
         <div className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm space-y-2">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-500 block">Shipping Allowance</span>
-          <div className="text-2xl font-black text-slate-800 tracking-tight">{formatPkr(summary.totalShippingMinor)}</div>
+          <span className="text-xs font-bold font-mono uppercase tracking-[0.06em] text-slate-500 block">Shipping Allowance</span>
+          <div className="text-2xl font-semibold text-slate-800 tracking-tight">{formatPkr(summary.totalShippingMinor)}</div>
           <span className="text-[11px] text-slate-400">Delivery charges collected</span>
         </div>
         <div className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm space-y-2">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-500 block">Net Seller Earnings</span>
-          <div className="text-2xl font-black text-slate-900 tracking-tight">{formatPkr(summary.totalNetPayableMinor)}</div>
+          <span className="text-xs font-bold font-mono uppercase tracking-[0.06em] text-slate-500 block">Net Seller Earnings</span>
+          <div className="text-2xl font-semibold text-slate-900 tracking-tight">{formatPkr(summary.totalNetPayableMinor)}</div>
           <span className="text-[11px] text-slate-400">All non-cancelled packages, before refunds</span>
         </div>
       </div>
@@ -313,7 +313,7 @@ export default function SellerSettlementsPage() {
 
                   <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-xs">
                     <span className="font-bold text-slate-600">Net Seller Payout:</span>
-                    <span className="font-black text-emerald-700 text-sm">{formatPkr(l.netSellerPayableMinor)}</span>
+                    <span className="font-semibold text-emerald-700 text-sm">{formatPkr(l.netSellerPayableMinor)}</span>
                   </div>
                 </div>
               ))}
@@ -323,7 +323,7 @@ export default function SellerSettlementsPage() {
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <caption className="sr-only">Per-order settlement statement</caption>
-                <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider">
+                <thead className="bg-slate-50 text-slate-500 font-bold font-mono uppercase tracking-[0.06em]">
                   <tr>
                     <th scope="col" className="py-3 px-6">Seller Order #</th>
                     <th scope="col" className="py-3 px-4">Date</th>
@@ -342,7 +342,7 @@ export default function SellerSettlementsPage() {
                       <td className="py-4 px-4 font-bold text-slate-900">{formatPkr(l.totalMinor)}</td>
                       <td className="py-4 px-4 font-medium text-slate-600">{l.commissionRatePercent}%</td>
                       <td className="py-4 px-4 font-bold text-rose-600">-{formatPkr(l.platformCommissionMinor)}</td>
-                      <td className="py-4 px-4 font-black text-emerald-700">{formatPkr(l.netSellerPayableMinor)}</td>
+                      <td className="py-4 px-4 font-semibold text-emerald-700">{formatPkr(l.netSellerPayableMinor)}</td>
                       <td className="py-4 px-6 text-right">
                         <Badge
                           variant={l.settlementStatus === "ELIGIBLE_FOR_PAYOUT" ? "success" : l.settlementStatus === "CANCELLED" ? "danger" : "warning"}

@@ -203,7 +203,7 @@ export function SellerCsvImporter({ isOpen, onClose, onSuccess }: SellerCsvImpor
               <FileSpreadsheet size={20} />
             </div>
             <div>
-              <h2 className="text-base font-black text-slate-900 tracking-tight">
+              <h2 className="text-base font-semibold text-slate-900 tracking-tight">
                 Bulk CSV Product & Stock Import
               </h2>
               <p className="text-xs text-slate-500">
@@ -327,7 +327,7 @@ export function SellerCsvImporter({ isOpen, onClose, onSuccess }: SellerCsvImpor
               {/* Per-row errors list if any */}
               {previewResult.errors.length > 0 && (
                 <div className="p-4 rounded-xl bg-rose-50/70 border border-rose-200 space-y-1.5">
-                  <p className="font-bold text-rose-900 text-[11px] uppercase tracking-wider">
+                  <p className="font-bold text-rose-900 text-[11px] font-mono uppercase tracking-[0.06em]">
                     Errors detected ({previewResult.errors.length}):
                   </p>
                   <div className="max-h-32 overflow-y-auto space-y-1">
@@ -367,7 +367,7 @@ export function SellerCsvImporter({ isOpen, onClose, onSuccess }: SellerCsvImpor
                         <td className="py-2 px-3 font-bold">{r.stock}</td>
                         <td className="py-2 px-3">
                           <span
-                            className={`px-1.5 py-0.5 rounded text-[10px] font-black uppercase ${
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase ${
                               r.action === "UPDATE"
                                 ? "bg-blue-100 text-blue-800"
                                 : "bg-emerald-100 text-emerald-800"

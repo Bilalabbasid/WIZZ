@@ -214,7 +214,7 @@ export function AdminOrdersView({ orders, permissions }: { orders: AdminOrderIte
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-700">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-black text-white text-base">{o.orderNumber}</span>
+                    <span className="font-semibold text-white text-base">{o.orderNumber}</span>
                     {isCod && (
                       <AdminBadge tone="warning">
                         <Banknote size={11} aria-hidden="true" /> Cash on delivery
@@ -229,7 +229,7 @@ export function AdminOrdersView({ orders, permissions }: { orders: AdminOrderIte
                 <div className="flex flex-wrap items-center gap-2">
                   <AdminBadge tone={paid ? "success" : o.paymentStatus === "REFUNDED" ? "neutral" : "warning"}>Payment: {o.paymentStatus}</AdminBadge>
                   <AdminBadge tone={orderTone(o.status)}>{o.status.replace(/_/g, " ")}</AdminBadge>
-                  <span className="font-black text-white text-sm tabular-nums">{formatCurrency(o.totalMinor)}</span>
+                  <span className="font-semibold text-white text-sm tabular-nums">{formatCurrency(o.totalMinor)}</span>
                 </div>
               </div>
 

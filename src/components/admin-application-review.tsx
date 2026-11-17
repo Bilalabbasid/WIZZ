@@ -169,7 +169,7 @@ export function AdminApplicationReview({
           <div className="bg-slate-800/80 rounded-3xl border border-slate-700/80 p-6 space-y-6">
             <div className="flex items-center justify-between pb-4 border-b border-slate-700/80">
               <div>
-                <h3 className="text-xl font-black text-white">{selectedApp.tradingName}</h3>
+                <h3 className="text-xl font-semibold text-white">{selectedApp.tradingName}</h3>
                 <p className="text-xs text-slate-400 mt-0.5">
                   Application ID: {selectedApp.id}
                 </p>
@@ -227,7 +227,7 @@ export function AdminApplicationReview({
               </div>
 
               <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
-                <span className="text-slate-500 block font-semibold uppercase tracking-wider text-[10px]">
+                <span className="text-slate-500 block font-semibold font-mono uppercase tracking-[0.06em] text-[10px]">
                   Logistics & Contact Information
                 </span>
                 <p className="text-slate-300">
@@ -246,7 +246,7 @@ export function AdminApplicationReview({
               </div>
 
               <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
-                <span className="text-slate-500 block font-semibold uppercase tracking-wider text-[10px]">
+                <span className="text-slate-500 block font-semibold font-mono uppercase tracking-[0.06em] text-[10px]">
                   Payout Bank Account
                 </span>
                 <p className="text-slate-300">
@@ -264,7 +264,7 @@ export function AdminApplicationReview({
 
               {/* Uploaded Documents */}
               <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
-                <span className="text-slate-500 block font-semibold uppercase tracking-wider text-[10px]">
+                <span className="text-slate-500 block font-semibold font-mono uppercase tracking-[0.06em] text-[10px]">
                   Attached KYC Documents ({selectedApp.documents.length})
                 </span>
                 {selectedApp.documents.length === 0 ? (
@@ -302,7 +302,7 @@ export function AdminApplicationReview({
             {/* Reviewer Action Controls */}
             <div className="pt-4 border-t border-slate-700/80 space-y-4">
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                <label className="block text-xs font-semibold font-mono uppercase tracking-[0.06em] text-slate-400 mb-1.5">
                   Reviewer Feedback / Adjustment Notes
                 </label>
                 <textarea

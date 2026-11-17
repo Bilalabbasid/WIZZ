@@ -110,7 +110,7 @@ export default function SellerInventoryPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+          <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">
             Inventory & Stock Balances
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
@@ -191,7 +191,7 @@ export default function SellerInventoryPage() {
                     <div>
                       <span className="block text-[10px] text-slate-400 uppercase font-bold">Available</span>
                       <span
-                        className={`text-xs font-black ${
+                        className={`text-xs font-semibold ${
                           it.availableUnits === 0
                             ? "text-rose-600"
                             : it.isLowStock
@@ -237,7 +237,7 @@ export default function SellerInventoryPage() {
             {/* Desktop Table (Viewports >= md) */}
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider">
+                <thead className="bg-slate-50 text-slate-500 font-bold font-mono uppercase tracking-[0.06em]">
                   <tr>
                     <th className="py-3 px-6">Variant SKU</th>
                     <th className="py-3 px-4">Product Title</th>
@@ -260,7 +260,7 @@ export default function SellerInventoryPage() {
                       </td>
                       <td className="py-4 px-4">
                         <span
-                          className={`text-sm font-black ${
+                          className={`text-sm font-semibold ${
                             it.availableUnits === 0
                               ? "text-rose-600"
                               : it.isLowStock
@@ -343,7 +343,7 @@ export default function SellerInventoryPage() {
 
             <form onSubmit={handleAdjustSubmit} className="space-y-4 text-xs">
               <div>
-                <label className="block font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                <label className="block font-semibold font-mono uppercase tracking-[0.06em] text-slate-700 mb-1.5">
                   Quantity Delta (Positive to add, Negative to remove)
                 </label>
                 <input
@@ -359,7 +359,7 @@ export default function SellerInventoryPage() {
               </div>
 
               <div>
-                <label className="block font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                <label className="block font-semibold font-mono uppercase tracking-[0.06em] text-slate-700 mb-1.5">
                   Adjustment Reason
                 </label>
                 <select
@@ -375,7 +375,7 @@ export default function SellerInventoryPage() {
               </div>
 
               <div>
-                <label className="block font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                <label className="block font-semibold font-mono uppercase tracking-[0.06em] text-slate-700 mb-1.5">
                   Audit Notes (Optional)
                 </label>
                 <input

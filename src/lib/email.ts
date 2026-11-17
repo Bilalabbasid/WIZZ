@@ -72,14 +72,14 @@ export async function sendEmail(message: OutgoingEmail): Promise<void> {
 }
 
 function layout(title: string, bodyHtml: string): string {
-  return `<!doctype html><html><body style="margin:0;background:#f4f6f5;font-family:Arial,Helvetica,sans-serif;color:#0f172a">
+  return `<!doctype html><html><body style="margin:0;background:#f5f5f2;font-family:Geist,Inter,Arial,Helvetica,sans-serif;color:#0e0e0d">
 <div style="max-width:560px;margin:0 auto;padding:24px">
-<div style="font-weight:800;font-size:20px;margin-bottom:16px">${escapeHtml(SITE_CONFIG.brandName)}</div>
-<div style="background:#fff;border-radius:12px;padding:24px;border:1px solid #e2e8f0">
+<div style="margin-bottom:18px;font-size:0;line-height:0"><span style="display:inline-block;width:30px;height:30px;border-radius:8px;background:#d4ff3a;color:#0e0e0d;font:800 18px/30px Arial,Helvetica,sans-serif;text-align:center;vertical-align:middle">W</span><span style="display:inline-block;margin-left:8px;font:700 22px/30px Arial,Helvetica,sans-serif;letter-spacing:-0.5px;color:#0e0e0d;vertical-align:middle">wizz</span></div>
+<div style="background:#fff;border-radius:20px;padding:24px;border:1px solid #e6e6e0">
 <h1 style="font-size:18px;margin:0 0 12px">${escapeHtml(title)}</h1>
 ${bodyHtml}
 </div>
-<p style="font-size:12px;color:#64748b;margin-top:16px">Questions? Contact ${escapeHtml(SITE_CONFIG.supportEmail)}.</p>
+<p style="font-size:12px;color:#5f5f59;margin-top:16px">Questions? Contact ${escapeHtml(SITE_CONFIG.supportEmail)}.</p>
 </div></body></html>`;
 }
 
@@ -121,7 +121,7 @@ export async function buildOrderEmail(
         `<table style="width:100%;font-size:14px;border-collapse:collapse">${rowsHtml}
 <tr><td style="padding-top:10px;border-top:1px solid #e2e8f0"><strong>Total</strong></td><td style="padding-top:10px;border-top:1px solid #e2e8f0;text-align:right"><strong>${escapeHtml(formatCurrency(order.totalMinor))}</strong></td></tr></table>
 <p style="font-size:14px">${escapeHtml(payLine)}</p>
-<p><a href="${escapeHtml(link)}" style="display:inline-block;background:#3a47e0;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:700">View order</a></p>`
+<p><a href="${escapeHtml(link)}" style="display:inline-block;background:#0e0e0d;color:#fff;text-decoration:none;padding:12px 22px;border-radius:999px;font-weight:600">View order</a></p>`
       ),
     };
   }
@@ -136,7 +136,7 @@ export async function buildOrderEmail(
       `Order ${order.orderNumber} has shipped`,
       `<p style="font-size:14px">Handed to <strong>${escapeHtml(carrier)}</strong>. Tracking number: <strong>${escapeHtml(tracking)}</strong>.</p>
 ${extra?.trackingUrl ? `<p><a href="${escapeHtml(extra.trackingUrl)}">Track on the carrier website</a></p>` : ""}
-<p><a href="${escapeHtml(link)}" style="display:inline-block;background:#3a47e0;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:700">View order</a></p>`
+<p><a href="${escapeHtml(link)}" style="display:inline-block;background:#0e0e0d;color:#fff;text-decoration:none;padding:12px 22px;border-radius:999px;font-weight:600">View order</a></p>`
     ),
   };
 }
@@ -153,7 +153,7 @@ export function appLink(path: string, params?: Record<string, string>): string {
 }
 
 function buttonHtml(link: string, label: string): string {
-  return `<p><a href="${escapeHtml(link)}" style="display:inline-block;background:#3a47e0;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:700">${escapeHtml(label)}</a></p>`;
+  return `<p><a href="${escapeHtml(link)}" style="display:inline-block;background:#0e0e0d;color:#fff;text-decoration:none;padding:12px 22px;border-radius:999px;font-weight:600">${escapeHtml(label)}</a></p>`;
 }
 
 export function buildPasswordResetEmail(input: { to: string; firstName: string; link: string; expiresMinutes: number }): OutgoingEmail {
@@ -165,7 +165,7 @@ export function buildPasswordResetEmail(input: { to: string; firstName: string; 
     text: `${intro}\n\nChoose a new password: ${input.link}\n\n${outro}`,
     html: layout(
       "Reset your password",
-      `<p style="font-size:14px">${escapeHtml(intro)}</p>${buttonHtml(input.link, "Choose a new password")}<p style="font-size:13px;color:#475569">${escapeHtml(outro)}</p>`
+      `<p style="font-size:14px">${escapeHtml(intro)}</p>${buttonHtml(input.link, "Choose a new password")}<p style="font-size:13px;color:#5f5f59">${escapeHtml(outro)}</p>`
     ),
   };
 }
@@ -179,7 +179,7 @@ export function buildEmailVerificationEmail(input: { to: string; firstName: stri
     text: `${intro}\n\nConfirm your email: ${input.link}\n\n${outro}`,
     html: layout(
       "Confirm your email",
-      `<p style="font-size:14px">${escapeHtml(intro)}</p>${buttonHtml(input.link, "Confirm email")}<p style="font-size:13px;color:#475569">${escapeHtml(outro)}</p>`
+      `<p style="font-size:14px">${escapeHtml(intro)}</p>${buttonHtml(input.link, "Confirm email")}<p style="font-size:13px;color:#5f5f59">${escapeHtml(outro)}</p>`
     ),
   };
 }

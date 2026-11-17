@@ -30,8 +30,8 @@ export default async function AdminSellerDetailPage({ params }: { params: Promis
 
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
         <div>
-          <span className="text-xs font-bold text-brand-400 uppercase tracking-wider">Seller organisation</span>
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white mt-1 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-bold text-brand-400 font-mono uppercase tracking-[0.06em]">Seller organisation</span>
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-white mt-1 flex flex-wrap items-center gap-2">
             {seller.name}
             {seller.isFirstParty && <AdminBadge tone="accent">First-party</AdminBadge>}
           </h1>
@@ -58,7 +58,7 @@ export default async function AdminSellerDetailPage({ params }: { params: Promis
         ].map(([label, value]) => (
           <div key={label} className={`${adminCardCls} p-4`}>
             <dt className="text-[11px] font-semibold text-slate-400">{label}</dt>
-            <dd className="text-lg font-black text-white tabular-nums mt-1">{value}</dd>
+            <dd className="text-lg font-semibold text-white tabular-nums mt-1">{value}</dd>
           </div>
         ))}
       </dl>
