@@ -212,6 +212,65 @@ export async function scrubLegacyAuditIbans(db: PrismaClient, log: Log = console
   return scrubbed;
 }
 
+/**
+ * Supabase (and any PostgREST-style data API) exposes every table in the `public` schema to the
+ * `anon` / `authenticated` roles using the project's public anon key. This app never uses that
+ * API; it connects as the table owner, which Row-Level Security does not restrict (no FORCE).
+ * So: enable RLS on every public table with NO policies (the API roles see nothing), and revoke
+ * every privilege the API roles hold, now and for tables created later. Idempotent; skips the
+ * role revokes where those roles don't exist (plain Postgres).
+ */
+export const DATA_API_LOCKDOWN_SQL = `
+DO $lockdown$
+DECLARE
+  t record;
+  r text;
+BEGIN
+  FOR t IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP
+    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t.tablename);
+  END LOOP;
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
+      EXECUTE format('REVOKE ALL ON ALL TABLES IN SCHEMA public FROM %I', r);
+      EXECUTE format('REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM %I', r);
+      EXECUTE format('REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM %I', r);
+      EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM %I', r);
+      EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM %I', r);
+      EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM %I', r);
+    END IF;
+  END LOOP;
+END
+$lockdown$;`;
+
+export interface DataApiExposure {
+  tablesWithoutRls: string[];
+  tablesReadableByApiRoles: string[];
+}
+
+/** Lists public tables still without RLS, and tables the API roles can still read. */
+export async function checkDataApiExposure(db: PrismaClient): Promise<DataApiExposure> {
+  const noRls = await db.$queryRaw<Array<{ tablename: string }>>`
+    SELECT c.relname AS tablename FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relkind = 'r' AND NOT c.relrowsecurity ORDER BY 1`;
+  const readable = await db.$queryRaw<Array<{ tablename: string }>>`
+    SELECT DISTINCT table_name AS tablename FROM information_schema.role_table_grants
+    WHERE table_schema = 'public' AND grantee IN ('anon', 'authenticated') ORDER BY 1`;
+  return {
+    tablesWithoutRls: noRls.map((r) => r.tablename),
+    tablesReadableByApiRoles: readable.map((r) => r.tablename),
+  };
+}
+
+export async function lockDownDataApi(db: PrismaClient, log: Log = console.log): Promise<DataApiExposure> {
+  await db.$executeRawUnsafe(DATA_API_LOCKDOWN_SQL);
+  const exposure = await checkDataApiExposure(db);
+  log(
+    `[data-api] RLS on all public tables: ${exposure.tablesWithoutRls.length === 0 ? "yes" : `NO (${exposure.tablesWithoutRls.length} missing)`}; ` +
+      `tables granted to anon/authenticated: ${exposure.tablesReadableByApiRoles.length}`
+  );
+  return exposure;
+}
+
 /** Full sequence used by bootstrap: data hygiene first, then the guards. Never throws. */
 export async function runFinancialDataProtection(db: PrismaClient, log: Log = console.log) {
   try {
@@ -226,5 +285,8 @@ export async function runFinancialDataProtection(db: PrismaClient, log: Log = co
   }
   await installFinancialDbGuards(db, log).catch((err) => {
     log(`[db-guards] FAILED: ${err instanceof Error ? err.message : String(err)}`);
+  });
+  await lockDownDataApi(db, log).catch((err) => {
+    log(`[data-api] FAILED: ${err instanceof Error ? err.message.split(String.fromCharCode(10)).slice(-1)[0] : String(err)}`);
   });
 }
